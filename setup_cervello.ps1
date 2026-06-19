@@ -4,7 +4,7 @@
 #  e configura il modello cloud. Eseguire col proprio account utente.
 # ============================================================================
 $ErrorActionPreference = "Stop"
-$MODEL = "gpt-oss:120b-cloud"
+$MODEL = "glm-4.7:cloud"
 
 function Info($m){ Write-Host "  $m" -ForegroundColor Cyan }
 function Ok($m){   Write-Host "  [OK] $m" -ForegroundColor Green }

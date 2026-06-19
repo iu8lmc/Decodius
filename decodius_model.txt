@@ -1,1 +1,1 @@
-gpt-oss:120b-cloud
+glm-4.7:cloud
