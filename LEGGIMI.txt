@@ -35,7 +35,7 @@ NOVITA' precedenti
 - Mani libere (pulsante 🎙): ascolto continuo con wake-word "Decodius".
 - Integrazione DECODIUM 4: lettura live + comandi (chiama una stazione
   in FT8/FT4/FT2, anche "chiama la piu' forte").
-- Cervello configurabile: Ollama (gpt-oss:120b) oppure provider cloud
+- Cervello configurabile: Ollama (glm-4.7) oppure provider cloud
   (NVIDIA NIM, OpenRouter, DeepSeek, Gemini) via decodius_provider.txt.
 - Voce evoluta: 4 voci IT + multilingua, motori cloud/locale/clone (la tua
   voce), nominativi sillabati in alfabeto fonetico NATO.
@@ -49,17 +49,17 @@ per personalizzare l'assistente. Potrai poi scrivergli e ti risponderà a voce.
 
 IL "CERVELLO" (OLLAMA) - CONFIGURAZIONE AUTOMATICA
 --------------------------------------------------
-Decodius usa Ollama + il modello gpt-oss:120b come "cervello".
+Decodius usa Ollama + il modello glm-4.7 come "cervello".
 NON serve configurarlo a mano:
 
   -> Al termine dell'installazione lascia spuntato
-     "Configura ora il cervello (Ollama + gpt-oss:120b)".
+     "Configura ora il cervello (Ollama + glm-4.7)".
 
 Lo strumento automatico:
   1) installa Ollama se manca;
   2) avvia il servizio;
   3) ti fa accedere con un clic (account Ollama gratuito, via browser);
-  4) prepara il modello gpt-oss:120b-cloud e configura Decodius.
+  4) prepara il modello glm-4.7:cloud e configura Decodius.
 
 Puoi rilanciarlo quando vuoi da:
   Menu Start -> Decodius -> "Configura cervello (Ollama)"

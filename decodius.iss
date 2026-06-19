@@ -83,7 +83,7 @@ Name: "{group}\Disinstalla Decodius"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Decodius"; Filename: "{app}\{#MyAppExe}"; IconFilename: "{app}\decodius.ico"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\setup_cervello.ps1"""; Description: "Configura ora il cervello (Ollama + gpt-oss:120b) — consigliato"; WorkingDir: "{app}"; Flags: postinstall skipifsilent runasoriginaluser
+Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\setup_cervello.ps1"""; Description: "Configura ora il cervello (Ollama + glm-4.7) — consigliato"; WorkingDir: "{app}"; Flags: postinstall skipifsilent runasoriginaluser
 Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\setup_stt.ps1"""; Description: "Attiva i comandi vocali (STT, ~700 MB, opzionale)"; WorkingDir: "{app}"; Flags: postinstall skipifsilent unchecked
 Filename: "{app}\{#MyAppExe}"; Description: "{cm:LaunchProgram,Decodius}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 
@@ -99,6 +99,6 @@ begin
          'NON devi configurare nulla a mano: al termine dell''installazione' + #13#10 +
          'lascia spuntata l''opzione "Configura ora il cervello".' + #13#10 +
          'Penserà a tutto lei: installa Ollama, ti fa accedere con un clic' + #13#10 +
-         'e prepara il modello gpt-oss:120b.' + #13#10 + #13#10 +
+         'e prepara il modello glm-4.7.' + #13#10 + #13#10 +
          'Serve una connessione Internet e un account Ollama gratuito.', mbInformation, MB_OK);
 end;

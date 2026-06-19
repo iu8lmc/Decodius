@@ -1,5 +1,5 @@
 # ============================================================================
-#  Decodius - Setup automatico del "cervello" (Ollama + gpt-oss:120b-cloud)
+#  Decodius - Setup automatico del "cervello" (Ollama + glm-4.7:cloud)
 #  Installa Ollama se manca, avvia il servizio, esegue il signin guidato
 #  e configura il modello cloud. Eseguire col proprio account utente.
 # ============================================================================
