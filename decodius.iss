@@ -3,7 +3,7 @@
 ;  Compila con:  "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" decodius.iss
 ; ============================================================================
 #define MyAppName "Decodius"
-#define MyAppVersion "1.12"
+#define MyAppVersion "1.13"
 #define MyAppPublisher "IU8LMC"
 #define MyAppExe "decodius.exe"
 #define Build "C:\Users\IU8LMC\decodius\build"
@@ -72,6 +72,11 @@ Source: "{#Build}\pyedge\*"; DestDir: "{app}\pyedge"; Flags: ignoreversion recur
 ; Attivabile dal task post-install opzionale o dall'icona "Attiva voce (STT)".
 Source: "{#Build}\setup_stt.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Build}\whisper_server.py"; DestDir: "{app}"; Flags: ignoreversion
+; --- MCP (tool esterni, OPZIONALE): ponte + esempio + config di esempio. Si attiva
+; copiando decodius_mcp.example.json in decodius_mcp.json e configurando i server. ---
+Source: "{#Build}\mcp_bridge.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Build}\mcp_example_server.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Build}\decodius_mcp.example.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Decodius"; Filename: "{app}\{#MyAppExe}"; IconFilename: "{app}\decodius.ico"; WorkingDir: "{app}"

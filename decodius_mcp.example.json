@@ -1,0 +1,17 @@
+{
+  "_nota": "Copia questo file in decodius_mcp.json e abilita i server che vuoi. Ogni server usa il transport stdio (command + args). Disattiva un server con \"disabled\": true.",
+  "servers": {
+    "esempio": {
+      "_descr": "Server MCP di test incluso (tool: eco, somma). Sostituisci PYTHON col tuo python o col pyedge di Decodius.",
+      "command": "PYTHON",
+      "args": ["mcp_example_server.py"],
+      "disabled": true
+    },
+    "filesystem": {
+      "_descr": "Esempio reale: filesystem MCP via npx (richiede Node). Limita le cartelle esposte.",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\IU8LMC\\Documents"],
+      "disabled": true
+    }
+  }
+}

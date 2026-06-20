@@ -4,11 +4,13 @@
 #include <QNetworkAccessManager>
 #include <QJsonArray>
 #include <QString>
+#include <QSet>
 #include <QByteArray>
 #include <QTimer>
 #include <functional>
 
 class QNetworkReply;
+class QProcess;
 
 class OllamaClient : public QObject {
     Q_OBJECT
@@ -59,6 +61,11 @@ private:
     void hamqthLookup(const QString& call, const QString& prefixInfo, std::function<void(QString)> done);
     void hamqthQuery(const QString& call, const QString& prefixInfo, std::function<void(QString)> done);
 
+    // MCP: tool esterni via Model Context Protocol (ponte Python mcp_bridge.py).
+    void startMcpBridge();   // lancia il bridge se esiste decodius_mcp.json accanto all'app
+    void loadMcpTools();     // attende /ready del bridge, poi unisce i tool MCP a m_tools
+    void runMcpTool(const QString& name, const QJsonObject& args, std::function<void(QString)> done);
+
     QNetworkAccessManager m_net;
     QNetworkReply* m_reply = nullptr;   // richiesta di streaming attiva
     QByteArray m_lineBuf;               // residuo di riga NDJSON tra due letture
@@ -91,4 +98,10 @@ private:
     // (riga1 user, riga2 password); sessione riusata finché valida.
     QString    m_hamqthSession;     // session_id corrente
     qint64     m_hamqthSessionMs = 0; // epoch ms dell'ultimo login (scade ~1h)
+
+    // MCP (tool esterni via mcp_bridge.py). Attivo solo se esiste decodius_mcp.json.
+    QProcess*     m_mcpProc = nullptr;
+    QSet<QString> m_mcpToolNames;                       // nomi dei tool forniti dall'MCP
+    QString       m_mcpHost = "http://127.0.0.1:5071";
+    int           m_mcpReadyTries = 0;
 };

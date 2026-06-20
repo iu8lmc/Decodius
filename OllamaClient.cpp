@@ -11,6 +11,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
+#include <QProcess>
 #include <QLocale>
 #include <QCoreApplication>
 #include <QtMath>
@@ -830,6 +831,8 @@ OllamaClient::OllamaClient(QObject* parent) : QObject(parent) {
         }}
     };
     m_tools.append(decCmd);
+
+    startMcpBridge();   // tool esterni via MCP, solo se configurati in decodius_mcp.json
 }
 
 void OllamaClient::setSystemPrompt(const QString& s) {
@@ -1152,8 +1155,86 @@ void OllamaClient::processNextToolCall() {
         runCallsign(args, done);           // asincrono (rete: callook/HamQTH)
     else if (name == QLatin1String("create_file"))
         runCreateFile(args, done);         // asincrono (attende conferma utente)
+    else if (m_mcpToolNames.contains(name))
+        runMcpTool(name, args, done);      // asincrono (tool esterno via bridge MCP)
     else
         done(runTool(name, args));         // sincrono (calcoli, file locali, log...)
+}
+
+// ─────────────────────────────── MCP (tool esterni) ───────────────────────────────
+// Avvia il bridge MCP (mcp_bridge.py) solo se accanto all'app c'è decodius_mcp.json.
+// Spegne un eventuale bridge "fantasma" (niente riuso di processi vecchi) e ne lancia
+// uno proprio col Python portatile pyedge; poi carica i tool con loadMcpTools().
+void OllamaClient::startMcpBridge() {
+    const QString appDir = QCoreApplication::applicationDirPath();
+    if (!QFileInfo::exists(appDir + QStringLiteral("/decodius_mcp.json"))) return;   // opt-in
+    const QString py     = appDir + QStringLiteral("/pyedge/pythonw.exe");
+    const QString script = appDir + QStringLiteral("/mcp_bridge.py");
+    if (!QFileInfo::exists(py) || !QFileInfo::exists(script)) return;
+
+    QNetworkReply* sr = m_net.get(QNetworkRequest(QUrl(m_mcpHost + QStringLiteral("/shutdown"))));
+    QTimer::singleShot(1200, sr, [sr]() { if (sr->isRunning()) sr->abort(); });
+    connect(sr, &QNetworkReply::finished, this, [this, sr, py, script, appDir]() {
+        sr->deleteLater();
+        QTimer::singleShot(600, this, [this, py, script, appDir]() {
+            m_mcpProc = new QProcess(this);
+            m_mcpProc->setWorkingDirectory(appDir);
+            m_mcpProc->start(py, { script });
+            m_mcpReadyTries = 0;
+            loadMcpTools();
+        });
+    });
+}
+
+// Attende /ready del bridge (con qualche tentativo), poi unisce i suoi tool a m_tools
+// così il modello li vede al prossimo invio. I nomi finiscono in m_mcpToolNames per
+// instradare le chiamate verso il bridge in processNextToolCall().
+void OllamaClient::loadMcpTools() {
+    QNetworkReply* r = m_net.get(QNetworkRequest(QUrl(m_mcpHost + QStringLiteral("/ready"))));
+    QTimer::singleShot(2000, r, [r]() { if (r->isRunning()) r->abort(); });
+    connect(r, &QNetworkReply::finished, this, [this, r]() {
+        r->deleteLater();
+        const bool ready = r->error() == QNetworkReply::NoError &&
+            r->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 200;
+        if (!ready) {
+            if (++m_mcpReadyTries <= 40)
+                QTimer::singleShot(800, this, [this]() { loadMcpTools(); });
+            return;
+        }
+        QNetworkReply* tr = m_net.get(QNetworkRequest(QUrl(m_mcpHost + QStringLiteral("/tools"))));
+        QTimer::singleShot(4000, tr, [tr]() { if (tr->isRunning()) tr->abort(); });
+        connect(tr, &QNetworkReply::finished, this, [this, tr]() {
+            tr->deleteLater();
+            if (tr->error() != QNetworkReply::NoError) return;
+            const QJsonArray arr = QJsonDocument::fromJson(tr->readAll()).array();
+            for (const QJsonValue& v : arr) {
+                const QJsonObject t = v.toObject();
+                const QString nm = t.value("function").toObject().value("name").toString();
+                if (nm.isEmpty() || m_mcpToolNames.contains(nm)) continue;
+                m_tools.append(t);
+                m_mcpToolNames.insert(nm);
+            }
+        });
+    });
+}
+
+// Inoltra una chiamata di tool MCP al bridge (POST /call) e restituisce il testo.
+void OllamaClient::runMcpTool(const QString& name, const QJsonObject& args,
+                              std::function<void(QString)> done) {
+    QJsonObject body{{"name", name}, {"arguments", args}};
+    QNetworkRequest req{QUrl(m_mcpHost + QStringLiteral("/call"))};
+    req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QNetworkReply* r = m_net.post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    QTimer::singleShot(60000, r, [r]() { if (r->isRunning()) r->abort(); });
+    connect(r, &QNetworkReply::finished, this, [r, done]() {
+        r->deleteLater();
+        QString text;
+        if (r->error() == QNetworkReply::NoError)
+            text = QJsonDocument::fromJson(r->readAll()).object().value("text").toString();
+        else
+            text = QStringLiteral("Errore MCP: %1").arg(r->errorString());
+        done(text);
+    });
 }
 
 // Ricerca web via Instant Answer API di DuckDuckGo (JSON, senza API key).
