@@ -3,7 +3,8 @@
 ;  Compila con:  "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" decodius.iss
 ; ============================================================================
 #define MyAppName "Decodius"
-#define MyAppVersion "1.13"
+; Tieni allineato a DECODIUS_VERSION in CMakeLists.txt (versione mostrata nella UI).
+#define MyAppVersion "1.14"
 #define MyAppPublisher "IU8LMC"
 #define MyAppExe "decodius.exe"
 #define Build "C:\Users\IU8LMC\decodius\build"

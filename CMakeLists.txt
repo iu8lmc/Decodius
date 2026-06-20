@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(Decodius VERSION 1.0 LANGUAGES CXX)
+# Versione UNICA del progetto: usata da project(), dal bundle macOS e mostrata nella
+# UI (Qt.application.version, via main.cpp). Bumpa QUI a ogni release e allinea decodius.iss.
+set(DECODIUS_VERSION "1.14")
+
+project(Decodius VERSION ${DECODIUS_VERSION} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,6 +48,9 @@ target_link_libraries(decodius PRIVATE
     Qt6::Network
 )
 
+# Versione mostrata in UI (main.cpp -> setApplicationVersion -> Qt.application.version).
+target_compile_definitions(decodius PRIVATE DECODIUS_VERSION="${DECODIUS_VERSION}")
+
 if (TARGET Qt6::TextToSpeech)
     target_link_libraries(decodius PRIVATE Qt6::TextToSpeech)
     target_compile_definitions(decodius PRIVATE HAVE_TTS)
@@ -65,7 +72,7 @@ if (APPLE)
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "Decodius"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.iu8lmc.decodius"
-        MACOSX_BUNDLE_BUNDLE_VERSION "1.10"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "1.10"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${DECODIUS_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${DECODIUS_VERSION}"
     )
 endif()

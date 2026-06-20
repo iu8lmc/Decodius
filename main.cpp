@@ -5,10 +5,15 @@
 #include <QIcon>
 #include <QFileInfo>
 
+#ifndef DECODIUS_VERSION
+#define DECODIUS_VERSION "1.14"   // di norma definita da CMake: set(DECODIUS_VERSION ...)
+#endif
+
 int main(int argc, char* argv[]) {
     QGuiApplication app(argc, argv);
     app.setApplicationName("Decodius");
-    app.setApplicationVersion("1.10 Alpha");   // mostrata nella UI (Qt.application.version)
+    // Versione progressiva mostrata nella UI (Qt.application.version). Fonte: CMakeLists.
+    app.setApplicationVersion(QStringLiteral(DECODIUS_VERSION " Alpha"));
     app.setOrganizationName("Decodius");
     // Icona di finestra/taskbar (l'icona del file .exe arriva dalla risorsa .rc).
     const QString iconPath = app.applicationDirPath() + QStringLiteral("/decodius.ico");
