@@ -20,6 +20,13 @@
       "command": "C:\\Program Files\\Decodius\\pyedge\\python.exe",
       "args": ["C:\\Program Files\\Decodius\\mcp_hamlog_server.py", "C:\\Users\\IU8LMC\\Documents\\IL_TUO_LOG.adi"],
       "disabled": true
+    },
+    "dxcluster": {
+      "_descr": "DX Cluster live (server incluso in Decodius): tool dx_spots, dx_for_call, cluster_status. Args: <TUO_CALL> [host] [port]. Sola lettura (niente self-spot).",
+      "readonly": true,
+      "command": "C:\\Program Files\\Decodius\\pyedge\\python.exe",
+      "args": ["C:\\Program Files\\Decodius\\mcp_cluster_server.py", "IU8LMC", "dxc.nc7j.com", "7373"],
+      "disabled": true
     }
   }
 }

@@ -4,7 +4,7 @@
 ; ============================================================================
 #define MyAppName "Decodius"
 ; Tieni allineato a DECODIUS_VERSION in CMakeLists.txt (versione mostrata nella UI).
-#define MyAppVersion "1.15"
+#define MyAppVersion "1.16"
 #define MyAppPublisher "IU8LMC"
 #define MyAppExe "decodius.exe"
 #define Build "C:\Users\IU8LMC\decodius\build"
@@ -78,6 +78,7 @@ Source: "{#Build}\whisper_server.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Build}\mcp_bridge.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Build}\mcp_example_server.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Build}\mcp_hamlog_server.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Build}\mcp_cluster_server.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Build}\decodius_mcp.example.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
