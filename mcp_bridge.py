@@ -39,8 +39,9 @@ TOOL_INDEX = {}   # nome_tool -> chiave server
 
 class MCPServer:
     """Client MCP stdio minimale verso un singolo server."""
-    def __init__(self, key, command, args, env=None, cwd=None):
+    def __init__(self, key, command, args, env=None, cwd=None, readonly=False):
         self.key = key
+        self.readonly = readonly
         self.proc = subprocess.Popen(
             [command] + list(args),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -107,6 +108,20 @@ def to_ollama_tool(t):
         "parameters": t.get("inputSchema") or {"type": "object", "properties": {}}}}
 
 
+# Tool "di scrittura"/mutanti: riconosciuti dagli hint MCP (readOnlyHint/destructiveHint)
+# o, in mancanza, dal nome. Con "readonly": true sul server vengono NASCOSTI al modello
+# (e quindi non richiamabili), così un server tipo filesystem espone solo lettura.
+_WRITE_HINTS = ("write", "edit", "create", "delete", "remove", "move", "rename",
+                "mkdir", "rmdir", "unlink", "append", "patch", "update", "put")
+def is_read_tool(t):
+    ann = t.get("annotations") or {}
+    if ann.get("readOnlyHint") is True:    return True
+    if ann.get("readOnlyHint") is False:   return False
+    if ann.get("destructiveHint") is True: return False
+    nm = (t.get("name") or "").lower()
+    return not any(w in nm for w in _WRITE_HINTS)
+
+
 def load_servers(cfg_path):
     global READY
     try:
@@ -118,16 +133,22 @@ def load_servers(cfg_path):
         if sc.get("disabled"):
             continue
         try:
-            log("avvio server MCP:", key, "->", sc.get("command"))
-            srv = MCPServer(key, sc["command"], sc.get("args", []), sc.get("env"), sc.get("cwd"))
+            ro = bool(sc.get("readonly"))
+            log("avvio server MCP:", key, "->", sc.get("command"), "[READ-ONLY]" if ro else "")
+            srv = MCPServer(key, sc["command"], sc.get("args", []), sc.get("env"), sc.get("cwd"), ro)
             tools = srv.initialize()
             SERVERS[key] = srv
+            kept, skipped = [], []
             for t in tools:
                 nm = t.get("name")
+                if ro and not is_read_tool(t):
+                    skipped.append(nm); continue          # readonly: nascondo i tool di scrittura
                 if nm in TOOL_INDEX:
                     log("collisione nome tool, ignoro duplicato:", nm); continue
                 TOOL_INDEX[nm] = key
-            log(f"  {key}: {len(tools)} tool -> " + ", ".join(t.get("name", "?") for t in tools))
+                kept.append(nm)
+            log(f"  {key}{' [READ-ONLY]' if ro else ''}: {len(kept)} tool -> " + ", ".join(kept)
+                + (f"  | nascosti (scrittura): {', '.join(skipped)}" if skipped else ""))
         except Exception as e:
             log("server", key, "FALLITO:", "".join(traceback.format_exception(e)))
     READY = True

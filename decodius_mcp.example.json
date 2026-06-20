@@ -1,5 +1,5 @@
 {
-  "_nota": "Copia questo file in decodius_mcp.json e abilita i server che vuoi. Ogni server usa il transport stdio (command + args). Disattiva un server con \"disabled\": true.",
+  "_nota": "Copia questo file in decodius_mcp.json e abilita i server che vuoi. Ogni server usa il transport stdio (command + args). Disattiva un server con \"disabled\": true. Con \"readonly\": true il bridge NASCONDE (e blocca) i tool di scrittura del server: consigliato per il filesystem sui tuoi dati.",
   "servers": {
     "esempio": {
       "_descr": "Server MCP di test incluso (tool: eco, somma). Sostituisci PYTHON col tuo python o col pyedge di Decodius.",
@@ -8,9 +8,10 @@
       "disabled": true
     },
     "filesystem": {
-      "_descr": "Esempio reale: filesystem MCP via npx (richiede Node). Limita le cartelle esposte.",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\IU8LMC\\Documents"],
+      "_descr": "Filesystem MCP (Node) limitato a una cartella, in sola lettura. Installa con: npm install -g @modelcontextprotocol/server-filesystem. Su Windows lancialo via node.exe + entry (più affidabile dello shim npx). L'ultimo argomento è la cartella esposta.",
+      "readonly": true,
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": ["C:\\Users\\IU8LMC\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-filesystem\\dist\\index.js", "C:\\Users\\IU8LMC\\Documents"],
       "disabled": true
     }
   }
