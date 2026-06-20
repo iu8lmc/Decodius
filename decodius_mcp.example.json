@@ -14,18 +14,11 @@
       "args": ["C:\\Users\\IU8LMC\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-filesystem\\dist\\index.js", "C:\\Users\\IU8LMC\\Documents"],
       "disabled": true
     },
-    "hamlog": {
-      "_descr": "Log ADIF 'di stazione' (server incluso in Decodius): tool log_stats, last_qsos, worked_before, search_qso. Punta al/ai tuoi file ADIF (ultimo argomento). Sola lettura.",
+    "station": {
+      "_descr": "MCP di STAZIONE (incluso in Decodius): LOG ADIF + DX CLUSTER in un solo server. Tool: log_stats, last_qsos, worked_before, search_qso, dx_spots, dx_for_call, cluster_status e info_call (storia nel log + spot attuali nel cluster). Args: --call <TUO> --log <file.adi> [--log ...] [--cluster host:port]. Sola lettura. Solo log: ometti --cluster. Solo cluster: ometti --log.",
       "readonly": true,
       "command": "C:\\Program Files\\Decodius\\pyedge\\python.exe",
-      "args": ["C:\\Program Files\\Decodius\\mcp_hamlog_server.py", "C:\\Users\\IU8LMC\\Documents\\IL_TUO_LOG.adi"],
-      "disabled": true
-    },
-    "dxcluster": {
-      "_descr": "DX Cluster live (server incluso in Decodius): tool dx_spots, dx_for_call, cluster_status. Args: <TUO_CALL> [host] [port]. Sola lettura (niente self-spot).",
-      "readonly": true,
-      "command": "C:\\Program Files\\Decodius\\pyedge\\python.exe",
-      "args": ["C:\\Program Files\\Decodius\\mcp_cluster_server.py", "IU8LMC", "dxc.nc7j.com", "7373"],
+      "args": ["C:\\Program Files\\Decodius\\mcp_station_server.py", "--call", "IU8LMC", "--log", "C:\\Users\\IU8LMC\\Documents\\IL_TUO_LOG.adi", "--cluster", "dxc.nc7j.com:7373"],
       "disabled": true
     }
   }
