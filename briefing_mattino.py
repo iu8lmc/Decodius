@@ -37,7 +37,7 @@ def read_model():
                     return m
         except Exception:
             pass
-    return "glm-4.7:cloud"
+    return "qwen3:1.7b"
 
 
 def fetch_solar():

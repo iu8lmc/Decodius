@@ -13,7 +13,7 @@ Autore: **Martino — IU8LMC**
 ## Cosa fa
 
 - 💬 **Chat + voce** — scrivi e Decodius risponde a voce (italiano naturale).
-- 🧠 **Cervello LLM** via [Ollama](https://ollama.com) — cloud (`glm-4.7:cloud`)
+- 🧠 **Cervello LLM** via [Ollama](https://ollama.com) — locale (`qwen3:1.7b`, senza account)
   o locale (`gemma4`, ecc.), configurabile in `decodius_model.txt`.
 - 📡 **Integrazione DECODIUM 4** — legge in tempo reale stato, frequenze, modo e
   i decode ("chi chiama CQ?") e può **comandare** il decoder a voce

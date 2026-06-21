@@ -1,10 +1,10 @@
 # ============================================================================
-#  Decodius - Setup automatico del "cervello" (Ollama + glm-4.7:cloud)
-#  Installa Ollama se manca, avvia il servizio, esegue il signin guidato
-#  e configura il modello cloud. Eseguire col proprio account utente.
+#  Decodius - Setup automatico del "cervello" (Ollama + qwen3:1.7b, LOCALE)
+#  Installa Ollama se manca, avvia il servizio e scarica il modello locale
+#  qwen3:1.7b: gira sul tuo PC, NESSUN account richiesto, funziona offline.
 # ============================================================================
 $ErrorActionPreference = "Stop"
-$MODEL = "glm-4.7:cloud"
+$MODEL = "qwen3:1.7b"
 
 function Info($m){ Write-Host "  $m" -ForegroundColor Cyan }
 function Ok($m){   Write-Host "  [OK] $m" -ForegroundColor Green }
@@ -67,34 +67,18 @@ if (-not (Test-OllamaUp)) {
 }
 Ok "Servizio Ollama attivo."
 
-# --- 3. Accesso cloud (signin) + modello -----------------------------------
+# --- 3. Scarico il modello LOCALE (nessun account richiesto) ----------------
 Write-Host ""
-Info "Configuro il modello cloud: $MODEL"
-Info "(i modelli '-cloud' girano sui server di Ollama: serve un account gratuito)"
+Info "Scarico il modello locale: $MODEL  (gira sul tuo PC, niente cloud)"
+Info "(la prima volta scarica ~1.4 GB; poi funziona offline)"
 Write-Host ""
 
-function Try-Pull {
-    & $ollama pull $MODEL 2>&1 | Out-String
-    return ($LASTEXITCODE -eq 0)
-}
-
-$done = Try-Pull
-if (-not $done) {
-    Warn "Serve l'accesso al tuo account Ollama (gratuito)."
-    Info "Si aprira' il browser: ACCEDI o REGISTRATI, poi torna qui."
-    Write-Host ""
-    try { & $ollama signin } catch {}
-    Write-Host ""
-    Info "Riprovo a configurare il modello..."
-    $done = Try-Pull
-}
-
-if (-not $done) {
-    Err "Non sono riuscito a preparare $MODEL."
-    Err "Verifica di aver completato l'accesso (ollama signin) e riprova questo setup."
+& $ollama pull $MODEL
+if ($LASTEXITCODE -ne 0) {
+    Err "Download di $MODEL non riuscito. Controlla la connessione e riprova questo setup."
     Read-Host "`n  Premi INVIO per chiudere"; exit 1
 }
-Ok "Modello cloud pronto: $MODEL"
+Ok "Modello locale pronto: $MODEL"
 
 # --- 4. Scrivo la configurazione di Decodius -------------------------------
 $modelFile = Join-Path $PSScriptRoot "decodius_model.txt"
