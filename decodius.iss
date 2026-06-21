@@ -4,7 +4,7 @@
 ; ============================================================================
 #define MyAppName "Decodius"
 ; Tieni allineato a DECODIUS_VERSION in CMakeLists.txt (versione mostrata nella UI).
-#define MyAppVersion "1.18"
+#define MyAppVersion "1.19"
 #define MyAppPublisher "IU8LMC"
 #define MyAppExe "decodius.exe"
 #define Build "C:\Users\IU8LMC\decodius\build"

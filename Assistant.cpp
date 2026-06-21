@@ -524,16 +524,42 @@ void Assistant::checkBrain() {
         emit brainChanged();
         return;
     }
+    pollBrain(0);   // Ollama puo' avviarsi lentamente a freddo: ritenta invece di mostrare subito il wizard
+}
+
+// Verifica Ollama con piu' tentativi (~20s): copre l'avvio lento al boot ed evita il
+// wizard spurio. Al 2o tentativo prova ad AVVIARE Ollama se installato ma non risponde.
+void Assistant::pollBrain(int attempt) {
     QNetworkReply* r = m_hudNet->get(QNetworkRequest(QUrl(QStringLiteral("http://localhost:11434/api/tags"))));
-    QTimer::singleShot(3000, r, [r]() { if (r->isRunning()) r->abort(); });
-    connect(r, &QNetworkReply::finished, this, [this, r]() {
+    QTimer::singleShot(2500, r, [r]() { if (r->isRunning()) r->abort(); });
+    connect(r, &QNetworkReply::finished, this, [this, r, attempt]() {
         r->deleteLater();
-        const bool ok = (r->error() == QNetworkReply::NoError);
-        m_needsBrainSetup = !ok;
-        m_brainStatus = ok ? QStringLiteral("Ollama attivo.")
-                           : QStringLiteral("Nessun cervello rilevato.");
-        emit brainChanged();
+        if (r->error() == QNetworkReply::NoError) {
+            m_needsBrainSetup = false;
+            m_brainStatus = QStringLiteral("Ollama attivo.");
+            emit brainChanged();
+            return;
+        }
+        if (attempt == 1) tryStartOllama();          // non risponde: provo ad avviarlo
+        if (attempt < 8) {                           // ~8 tentativi x ~2,5s
+            m_brainStatus = QStringLiteral("Avvio del cervello (Ollama)…");
+            emit brainChanged();
+            QTimer::singleShot(2500, this, [this, attempt]() { pollBrain(attempt + 1); });
+        } else {
+            m_needsBrainSetup = true;                // davvero assente: mostra il wizard
+            m_brainStatus = QStringLiteral("Nessun cervello rilevato.");
+            emit brainChanged();
+        }
     });
+}
+
+// Avvia Ollama se installato (l'app gestisce il server su :11434), altrimenti 'serve'.
+void Assistant::tryStartOllama() {
+    const QString base = QDir::homePath() + QStringLiteral("/AppData/Local/Programs/Ollama/");
+    if (QFileInfo::exists(base + QStringLiteral("ollama app.exe")))
+        QProcess::startDetached(base + QStringLiteral("ollama app.exe"), {});
+    else if (QFileInfo::exists(base + QStringLiteral("ollama.exe")))
+        QProcess::startDetached(base + QStringLiteral("ollama.exe"), {QStringLiteral("serve")});
 }
 
 void Assistant::recheckBrain() {

@@ -148,6 +148,8 @@ private:
 
     // Wizard cervello.
     void checkBrain();              // verifica se un LLM è configurato/raggiungibile
+    void pollBrain(int attempt);    // ritenta (~20s): Ollama puo' avviarsi lentamente
+    void tryStartOllama();          // avvia Ollama se installato ma non risponde
     bool    m_needsBrainSetup = false;
     QString m_brainStatus = QStringLiteral("verifica…");
 
