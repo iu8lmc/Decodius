@@ -6,6 +6,9 @@
 #include <QString>
 #include <QTimer>
 #include <QVariantList>
+#include <QVector>
+#include <QPair>
+#include <QRegularExpression>
 #include "OllamaClient.h"
 #include "WhisperStt.h"
 
@@ -185,6 +188,22 @@ private:
     void clusterLookup();
     bool    m_clusterVisible = false;
     QVariantMap m_clusterCard;
+
+    // ── Motore d'intenti (DSL HAM): i comandi comuni vengono eseguiti SENZA LLM (zero
+    // token, gira anche su Raspberry). Grammatica caricabile da decodius_intents.txt. ──
+    struct ISlot { QString name; int kind = 0; QStringList opts; };   // 0 free,1 enum,2 call,3 num
+    struct IntentPat { QRegularExpression rx; QVector<ISlot> sl; };
+    struct IntentRule {
+        QVector<IntentPat> pats;                       // frasi compilate (alternative)
+        QString tool;                                  // tool da eseguire (vuoto = solo voce)
+        QVector<QPair<QString,QString>> args;           // arg -> valore (con {slot})
+        QString say;                                    // template risposta ({slot}, {risultato})
+    };
+    QVector<IntentRule> m_intents;
+    void loadIntents();                                 // compila la grammatica (file o default)
+    bool tryIntent(const QString& text);                // prova a gestire il testo senza LLM
+    void speakResult(const QString& text);              // pronuncia una risposta completa
+    static QRegularExpression compileIntentPattern(const QString& pat, QVector<ISlot>& sl);
 
     // ── Pilota automatico (Fase 3): tick periodico che fa "ragionare e agire" l'LLM
     // sulla banda usando i suoi tool (decodium, dxcluster, memoria, comandi). ──

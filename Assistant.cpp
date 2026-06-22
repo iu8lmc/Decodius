@@ -49,6 +49,7 @@ Assistant::Assistant(QObject* parent) : QObject(parent) {
         cf.close();
     }
     applySystemPrompt();   // invia il prompt a Ollama (col nominativo se presente)
+    loadIntents();         // motore d'intenti: comandi comuni senza LLM (grammatica DSL)
 
     // Pilota automatico: timer dei tick periodici (parte solo quando attivato).
     m_autoTimer.setInterval(20000);   // un ciclo ogni 20 s
@@ -997,6 +998,203 @@ void Assistant::speakNext() {
 }
 #endif
 
+// ════════════════ Motore d'intenti (DSL HAM): comandi senza LLM (zero token) ════════════════
+// Grammatica di default (se manca decodius_intents.txt). Sintassi per riga:
+//   @nome  inizia un intento · frase: <pattern> (più alternative) · azione: tool(arg=val) ·
+//   voce: <template> ({slot} e {risultato}=output del tool). Pattern: (a|b) alternative ·
+//   {x=A|B} slot a scelta · {x=call} nominativo · {x=num} numero · {x} testo libero.
+static const char* kDefaultIntents = R"INT(
+@modo
+frase: (passa a|passa in|metti in|metti|vai in|imposta il modo|modo) {m=FT8|FT4|FT2|CW|SSB|AM|FM}
+azione: decodium_comando(comando=modo, valore={m})
+voce: Modo {m} impostato.
+
+@banda
+frase: (vai sui|vai in|passa sui|passa in|metti i|metti in|banda) {b=160|80|60|40|30|20|17|15|12|10|6|2}( metri| m|m)?
+azione: decodium_comando(comando=banda, valore={b}m)
+voce: Banda {b} metri.
+
+@tx_on
+frase: (vai in tx|attiva la trasmissione|manda in trasmissione|trasmetti adesso|tx on)
+azione: decodium_comando(comando=tx_on)
+voce: Trasmissione attivata.
+
+@tx_off
+frase: (ferma la trasmissione|stop tx|disattiva la trasmissione|tx off|smetti di trasmettere)
+azione: decodium_comando(comando=tx_off)
+voce: Trasmissione fermata.
+
+@monitor_on
+frase: (attiva il monitoraggio|attiva monitor|inizia a monitorare|monitora la banda)
+azione: decodium_comando(comando=monitoraggio, attivo=true)
+voce: Monitoraggio attivato.
+
+@monitor_off
+frase: (ferma il monitoraggio|spegni il monitor|stop monitor|disattiva il monitoraggio)
+azione: decodium_comando(comando=monitoraggio, attivo=false)
+voce: Monitoraggio fermato.
+
+@cq
+frase: (chiama cq|fai cq|cq generale|manda cq|cq automatico)
+azione: decodium_comando(comando=autocq, attivo=true)
+voce: Chiamo CQ.
+
+@rispondi
+frase: (rispondi a|chiama|aggancia|lavora) {c=call}
+azione: decodium_comando(comando=rispondi, call={c})
+voce: Chiamo {c}.
+
+@ora
+frase: (che ore sono|che ora e|dammi l'ora|ora utc|che giorno e)
+azione: ora_utc()
+voce: {risultato}
+
+@dipolo
+frase: (calcola|dimmi|quant'e lungo|lunghezza del|fammi) (il |un )?dipolo (per|a|sui|su|in) {f=num}
+azione: ham_calc(operazione=dipolo, freq_mhz={f})
+voce: {risultato}
+
+@verticale
+frase: (calcola|dimmi|quant'e alta|altezza della|fammi) (la |una )?verticale (per|a|sui|su|in) {f=num}
+azione: ham_calc(operazione=verticale, freq_mhz={f})
+voce: {risultato}
+
+@chi_e
+frase: (chi e|di chi e|di dove|da dove trasmette|che paese e) {c=call}
+azione: callsign(call={c})
+voce: {risultato}
+
+@ricorda
+frase: (ricorda che|memorizza che|annota che|segnati che|tieni a mente che) {x}
+azione: memoria(azione=salva, contenuto={x})
+voce: Memorizzato.
+
+@decodifica
+frase: (cosa stai decodificando|cosa decodifichi|che stai ricevendo|cosa c'e in ricezione|stato di decodium)
+azione: decodium()
+voce: {risultato}
+)INT";
+
+// Compila un pattern DSL in QRegularExpression (case-insensitive, non ancorato = ricerca).
+QRegularExpression Assistant::compileIntentPattern(const QString& pat, QVector<ISlot>& sl) {
+    QString rx;
+    int i = 0;
+    while (i < pat.size()) {
+        const QChar c = pat.at(i);
+        if (c == '{') {
+            int j = pat.indexOf('}', i);
+            if (j < 0) j = pat.size();
+            const QString inside = pat.mid(i + 1, j - i - 1).trimmed();
+            ISlot s;
+            const int eq = inside.indexOf('=');
+            if (eq >= 0) {
+                s.name = inside.left(eq).trimmed();
+                const QString spec = inside.mid(eq + 1).trimmed();
+                if (spec == QLatin1String("call")) { s.kind = 2; rx += QStringLiteral("([A-Za-z0-9/]+)"); }
+                else if (spec == QLatin1String("num")) { s.kind = 3; rx += QStringLiteral("([0-9.,]+)"); }
+                else { s.kind = 1; s.opts = spec.split('|'); rx += '(' + spec + ')'; }
+            } else { s.name = inside; s.kind = 0; rx += QStringLiteral("(.+)"); }
+            sl.append(s);
+            i = j + 1;
+        }
+        else if (c == '(') { rx += QStringLiteral("(?:"); ++i; }
+        else if (c == ')') { rx += ')'; ++i; }
+        else if (c == '|') { rx += '|'; ++i; }
+        else if (c == '?') { rx += '?'; ++i; }
+        else if (c == ' ') { rx += QStringLiteral("\\s+"); ++i; }
+        else { rx += QRegularExpression::escape(QString(c)); ++i; }
+    }
+    return QRegularExpression(rx, QRegularExpression::CaseInsensitiveOption);
+}
+
+void Assistant::loadIntents() {
+    m_intents.clear();
+    QString text;
+    QFile f(QCoreApplication::applicationDirPath() + QStringLiteral("/decodius_intents.txt"));
+    if (f.open(QIODevice::ReadOnly | QIODevice::Text)) { text = QString::fromUtf8(f.readAll()); f.close(); }
+    if (text.trimmed().isEmpty()) text = QString::fromUtf8(kDefaultIntents);
+
+    IntentRule cur; bool have = false;
+    auto flush = [&]() { if (have && !cur.pats.isEmpty()) m_intents.append(cur); cur = IntentRule(); have = false; };
+    const QStringList lines = text.split('\n');
+    for (const QString& raw : lines) {
+        const QString l = raw.trimmed();
+        if (l.isEmpty() || l.startsWith('#')) continue;
+        if (l.startsWith('@')) { flush(); have = true; }
+        else if (l.startsWith(QStringLiteral("frase:"))) {
+            QVector<ISlot> sl;
+            IntentPat p; p.rx = compileIntentPattern(l.mid(6).trimmed(), sl); p.sl = sl;
+            cur.pats.append(p);
+        } else if (l.startsWith(QStringLiteral("azione:"))) {
+            const QString a = l.mid(7).trimmed();
+            const int lp = a.indexOf('('), rp = a.lastIndexOf(')');
+            if (lp > 0) {
+                cur.tool = a.left(lp).trimmed();
+                const QString inner = (rp > lp) ? a.mid(lp + 1, rp - lp - 1) : QString();
+                const QStringList kvs = inner.split(',', Qt::SkipEmptyParts);
+                for (const QString& kv : kvs) {
+                    const int eq = kv.indexOf('=');
+                    if (eq > 0) cur.args.append({kv.left(eq).trimmed(), kv.mid(eq + 1).trimmed()});
+                }
+            }
+        } else if (l.startsWith(QStringLiteral("voce:"))) {
+            cur.say = l.mid(5).trimmed();
+        }
+    }
+    flush();
+}
+
+// Prova a gestire il testo con la grammatica; se ci riesce esegue/parla e ritorna true
+// (niente LLM, zero token). Altrimenti false -> sendText passa la palla al cervello.
+bool Assistant::tryIntent(const QString& text) {
+    if (m_intents.isEmpty()) return false;
+    const QString t = text.trimmed();
+    for (const IntentRule& rule : m_intents) {
+        for (const IntentPat& p : rule.pats) {
+            const QRegularExpressionMatch m = p.rx.match(t);
+            if (!m.hasMatch()) continue;
+            QMap<QString, QString> sv;
+            for (int i = 0; i < p.sl.size(); ++i) {
+                QString v = m.captured(i + 1).trimmed();
+                const ISlot& s = p.sl.at(i);
+                if (s.kind == 2) v = v.toUpper();                          // nominativo
+                else if (s.kind == 1)                                      // enum -> forma canonica
+                    for (const QString& o : s.opts)
+                        if (o.compare(v, Qt::CaseInsensitive) == 0) { v = o; break; }
+                sv.insert(s.name, v);
+            }
+            auto subst = [&sv](QString s) {
+                for (auto it = sv.cbegin(); it != sv.cend(); ++it)
+                    s.replace('{' + it.key() + '}', it.value());
+                return s;
+            };
+            if (rule.tool.isEmpty()) { speakResult(subst(rule.say)); return true; }   // solo voce
+            QJsonObject args;
+            for (const auto& kv : rule.args) args.insert(kv.first, subst(kv.second));
+            setState(Thinking);
+            const QString sayT = rule.say;
+            m_ollama.execTool(rule.tool, args, [this, sayT, sv](const QString& result) {
+                QString out = sayT;
+                for (auto it = sv.cbegin(); it != sv.cend(); ++it) out.replace('{' + it.key() + '}', it.value());
+                out.replace(QStringLiteral("{risultato}"), result.trimmed());
+                speakResult(out);
+            });
+            return true;
+        }
+    }
+    return false;
+}
+
+void Assistant::speakResult(const QString& text) {
+    const QString out = text.trimmed();
+#ifdef HAVE_TTS
+    m_streaming = false; ttsStop(); ttsSay(out);
+#endif
+    m_lastResponse = out;
+    emit lastResponseChanged();
+    endTurn();
+}
+
 void Assistant::sendText(const QString& text) {
     QString t = text.trimmed();
     const bool hasImg = !m_pendingImageB64.isEmpty();
@@ -1045,6 +1243,9 @@ void Assistant::sendText(const QString& text) {
         setWakeWord(!off);
         return;
     }
+    // ── MOTORE D'INTENTI: comandi/azioni comuni eseguiti SENZA LLM (zero token, gira su Pi).
+    // Se la grammatica gestisce la frase, agiamo e usciamo; altrimenti passa al cervello.
+    if (!hasImg && tryIntent(t)) return;
     if (t.isEmpty()) t = QStringLiteral("Descrivi questa immagine.");  // query solo-immagine
     // Se Decodius sta già elaborando o parlando, annullo PRIMA in modo silenzioso
     // (niente errore spurio): così una nuova istruzione interrompe e prende il posto.

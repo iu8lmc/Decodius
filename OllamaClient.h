@@ -30,6 +30,11 @@ public slots:
     void resolveConfirmation(bool accepted);
     void cancel();   // interruzione utente (barge-in): abortisce in modo silenzioso
 
+public:
+    // Esegue un SINGOLO tool (sync o async) e ne ritorna il risultato testuale via `done`.
+    // Usato dal motore d'intenti per agire SENZA passare dall'LLM (zero token).
+    void execTool(const QString& name, const QJsonObject& args, std::function<void(QString)> done);
+
 signals:
     void tokenReceived(const QString& chunk);   // pezzo di testo appena generato
     void responseReady(const QString& text);    // risposta completa (a fine stream)

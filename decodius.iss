@@ -4,7 +4,7 @@
 ; ============================================================================
 #define MyAppName "Decodius"
 ; Tieni allineato a DECODIUS_VERSION in CMakeLists.txt (versione mostrata nella UI).
-#define MyAppVersion "1.25"
+#define MyAppVersion "1.26"
 #define MyAppPublisher "IU8LMC"
 #define MyAppExe "decodius.exe"
 #define Build "C:\Users\IU8LMC\decodius\build"
@@ -45,6 +45,7 @@ Source: "{#Build}\{#MyAppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Build}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Build}\decodius.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Build}\decodius_system.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Build}\decodius_intents.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Build}\decodius_ham_kb.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Build}\decodius_model.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Build}\LEGGIMI.txt"; DestDir: "{app}"; Flags: ignoreversion isreadme

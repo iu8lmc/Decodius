@@ -1337,6 +1337,20 @@ void OllamaClient::processNextToolCall() {
         done(runTool(name, args));         // sincrono (calcoli, file locali, log...)
 }
 
+// Dispatch di un singolo tool per il motore d'intenti (stessa mappatura, senza history).
+void OllamaClient::execTool(const QString& name, const QJsonObject& args,
+                            std::function<void(QString)> done) {
+    if (name == QLatin1String("web_search"))            runWebSearch(args, done);
+    else if (name == QLatin1String("propagazione"))     runPropagazione(done);
+    else if (name == QLatin1String("dxcluster"))        runDxCluster(args, done);
+    else if (name == QLatin1String("decodium"))         runDecodium(done);
+    else if (name == QLatin1String("decodium_comando")) runDecodiumCommand(args, done);
+    else if (name == QLatin1String("callsign"))         runCallsign(args, done);
+    else if (name == QLatin1String("create_file"))      runCreateFile(args, done);
+    else if (m_mcpToolNames.contains(name))             runMcpTool(name, args, done);
+    else                                                done(runTool(name, args));
+}
+
 // ─────────────────────────────── MCP (tool esterni) ───────────────────────────────
 // Avvia il bridge MCP (mcp_bridge.py) solo se accanto all'app c'è decodius_mcp.json.
 // Spegne un eventuale bridge "fantasma" (niente riuso di processi vecchi) e ne lancia
