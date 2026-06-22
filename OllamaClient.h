@@ -86,6 +86,13 @@ private:
 
     QString m_host  = "http://localhost:11434";
     QString m_model = "gemma4:latest";
+    // Cervello CLOUD primario con FALLBACK locale: se decodius_model.txt ha una 2a riga,
+    // quella è il modello locale di riserva. Quando il cloud fallisce (crediti finiti,
+    // rate-limit, rete), si passa al locale per il resto della sessione (riavvia per
+    // ritentare il cloud). Il primario cloud non viene pre-scaldato (non spreca crediti).
+    QString m_modelFallback;        // modello locale di riserva (vuoto = nessun fallback)
+    bool    m_primaryIsCloud = false;   // il primario è un modello ":cloud"
+    bool    m_usingFallback  = false;   // siamo già passati al locale
     // Backend OpenAI-compatibile (NVIDIA NIM/OpenRouter/DeepSeek/Gemini) invece di Ollama.
     bool    m_openai = false;        // true = usa /chat/completions con Bearer + SSE
     QString m_apiKey;               // chiave del provider (Authorization: Bearer)

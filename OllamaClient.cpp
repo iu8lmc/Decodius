@@ -464,10 +464,19 @@ OllamaClient::OllamaClient(QObject* parent) : QObject(parent) {
     // per cambiare cervello (es. qwen3-coder:30b, qwen3:30b, gemma4 per la vision).
     QFile mf(QCoreApplication::applicationDirPath() + QStringLiteral("/decodius_model.txt"));
     if (mf.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        const QString m = QString::fromUtf8(mf.readAll()).trimmed();
-        if (!m.isEmpty()) m_model = m;
+        // 1a riga = modello primario (può essere ":cloud"); 2a riga (opzionale) = modello
+        // LOCALE di riserva, usato in automatico se il cloud fallisce (crediti/rate/rete).
+        QStringList models;
+        const QStringList lines = QString::fromUtf8(mf.readAll()).split('\n');
+        for (const QString& raw : lines) {
+            const QString l = raw.trimmed();
+            if (!l.isEmpty() && !l.startsWith('#')) models << l;
+        }
+        if (!models.isEmpty()) m_model = models.first();
+        if (models.size() >= 2) m_modelFallback = models.at(1);
         mf.close();
     }
+    m_primaryIsCloud = m_model.contains(QStringLiteral(":cloud"));
 
     // Cervello alternativo via provider OpenAI-compatibile (es. NVIDIA NIM, OpenRouter,
     // DeepSeek, Gemini). File decodius_provider.txt con righe key=value:
@@ -500,8 +509,8 @@ OllamaClient::OllamaClient(QObject* parent) : QObject(parent) {
         }
     }
 
-    if (!m_openai)
-        warmUp();   // precarica il modello in VRAM (solo Ollama locale)
+    if (!m_openai && !m_primaryIsCloud)
+        warmUp();   // precarica il modello in VRAM (solo Ollama locale; non per il cloud)
 
     // Descrizione degli strumenti esposti al modello (schema JSON).
     QJsonObject scanFolder{
@@ -846,7 +855,7 @@ void OllamaClient::setSystemPrompt(const QString& s) {
 // Ollama elabora e mette in CACHE il prefisso (costoso sui modelli grandi su CPU).
 // La prima domanda reale riusa la cache invece di pagare ~30s di prompt eval.
 void OllamaClient::warmChat() {
-    if (m_openai) return;   // provider cloud: nessun pre-riscaldamento (consumerebbe quota)
+    if (m_openai || m_primaryIsCloud) return;   // cloud: niente pre-riscaldamento (consuma quota)
     if (m_history.isEmpty()) return;
     QJsonArray msgs = m_history;                      // [system]
     msgs.append(QJsonObject{{"role", "user"}, {"content", "ok"}});
@@ -976,6 +985,11 @@ void OllamaClient::onReadyRead() {
         if (obj.contains("error")) {
             const QString err = obj.value("error").toString();
             m_errored = true;   // così onFinished non riemette per l'abort che segue
+            // Cloud fallito (crediti/rate): ripiego SILENZIOSO sul locale in onFinished.
+            if (m_primaryIsCloud && !m_usingFallback && !m_modelFallback.isEmpty()) {
+                abortCurrent();
+                return;
+            }
             emit errorOccurred(err.isEmpty() ? QStringLiteral("errore da Ollama") : err);
             abortCurrent();
             return;
@@ -1058,15 +1072,34 @@ void OllamaClient::onFinished() {
     reply->deleteLater();
 
     if (reply->error() != QNetworkReply::NoError) {
-        // Niente risposta valida: tolgo dalla history il messaggio utente
-        // rimasto in sospeso, così un nuovo tentativo non lo duplica.
+        // Interruzione volontaria dell'utente (barge-in): nessun errore, ripulisci e basta.
+        if (m_userCancelled) {
+            m_userCancelled = false;
+            if (!m_history.isEmpty() &&
+                m_history.last().toObject().value("role").toString() == "user")
+                m_history.removeLast();
+            return;
+        }
+        // FALLBACK: il primario è CLOUD e ha fallito (crediti finiti, rate-limit, rete,
+        // timeout) -> passo al cervello LOCALE e rilancio la STESSA domanda (il messaggio
+        // utente è ancora in history). Resto sul locale per il resto della sessione
+        // (riavvia Decodius per ritentare il cloud). Tutto trasparente per l'utente.
+        if (m_primaryIsCloud && !m_usingFallback && !m_modelFallback.isEmpty()) {
+            m_usingFallback = true;
+            m_errored = false;
+            m_acc.clear();
+            m_toolCalls = QJsonArray();
+            m_lineBuf.clear();
+            m_model = m_modelFallback;
+            sendRequest();
+            return;
+        }
+        // Errore non recuperabile: tolgo dalla history il messaggio utente in sospeso
+        // (così un nuovo tentativo non lo duplica) ed emetto.
         if (!m_history.isEmpty() &&
             m_history.last().toObject().value("role").toString() == "user")
             m_history.removeLast();
-        // Interruzione volontaria dell'utente (barge-in): nessun messaggio d'errore.
-        if (m_userCancelled) { m_userCancelled = false; return; }
-        // Errore già segnalato da onReadyRead (caso "error" nel body): l'abort
-        // conseguente non deve produrre un secondo messaggio.
+        // Errore già segnalato da onReadyRead (caso "error" nel body): niente doppione.
         if (m_errored) return;
         const QString msg = reply->error() == QNetworkReply::OperationCanceledError
             ? QStringLiteral("tempo scaduto in attesa della risposta")

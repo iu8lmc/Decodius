@@ -48,6 +48,9 @@ Thumbs.db
 # --- Scratch Voxtral (build llama.cpp di test, modelli, env ML: enormi) e helper locali ---
 voxtral_dev/
 deploy_voxtral_local.ps1
+apply_cloud.ps1
+update_decodius.ps1
+kill_decodius.ps1
 mcp_voice_test.py
 bench_gemma.out
 decodius_stt.txt

@@ -4,8 +4,10 @@
 #  PyTorch (CUDA) + transformers + bitsandbytes + il modello Voxtral-Mini-3B
 #  in <cartella app>\voxtral. Il modello gira in 4-bit sulla GPU (~3.6 GB VRAM),
 #  resta caldo, trascrive in ~1.5-2 s. ~13 GB di download la prima volta.
-#  RICHIEDE una GPU NVIDIA (CUDA). Imposta anche il cervello su qwen3:4b, che
-#  convive con Voxtral negli 8 GB. Per tornare a Whisper: decodius_stt.txt = whisper.
+#  RICHIEDE una GPU NVIDIA (CUDA). Imposta il cervello su glm-4.7:cloud (primario, serve
+#  'ollama signin') con riserva LOCALE qwen3:4b: se il cloud finisce i crediti / non e'
+#  loggato, Decodius passa da solo a qwen3:4b (convive con Voxtral negli 8 GB).
+#  Per tornare a Whisper: decodius_stt.txt = whisper.
 # ============================================================================
 $ErrorActionPreference = "Stop"
 
@@ -47,8 +49,9 @@ if ((Test-Path "$py\python.exe") -and (Test-Path "$base\voxtral_server.py")) {
     $ans = Read-Host "  Reinstallare da zero? (s/N)"
     if ($ans -notmatch '^[sS]') {
         Set-Content (Join-Path $PSScriptRoot "decodius_stt.txt") "voxtral" -Encoding ascii -NoNewline
-        Set-Content (Join-Path $PSScriptRoot "decodius_model.txt") "qwen3:4b" -Encoding ascii -NoNewline
-        Ok "Engine STT = voxtral, cervello = qwen3:4b. Riavvia Decodius."
+        # cervello: primario CLOUD + riserva LOCALE (fallback automatico) su due righe
+        Set-Content (Join-Path $PSScriptRoot "decodius_model.txt") "glm-4.7:cloud`r`nqwen3:4b" -Encoding ascii -NoNewline
+        Ok "Engine STT = voxtral, cervello = glm-4.7:cloud (riserva qwen3:4b). Riavvia Decodius."
         Read-Host "  Premi INVIO per chiudere"; exit 0
     }
     Remove-Item $base -Recurse -Force
@@ -96,8 +99,10 @@ try {
     & "$py\python.exe" -m pip cache purge 2>&1 | Out-Null
 
     Set-Content (Join-Path $PSScriptRoot "decodius_stt.txt") "voxtral" -Encoding ascii -NoNewline
-    Set-Content (Join-Path $PSScriptRoot "decodius_model.txt") "qwen3:4b" -Encoding ascii -NoNewline
-    # cervello che convive con Voxtral negli 8 GB: scarico qwen3:4b se Ollama c'e'
+    # cervello: primario CLOUD glm-4.7:cloud (serve 'ollama signin') + riserva LOCALE qwen3:4b.
+    # Se il cloud finisce i crediti / non e' loggato, Decodius passa da solo a qwen3:4b.
+    Set-Content (Join-Path $PSScriptRoot "decodius_model.txt") "glm-4.7:cloud`r`nqwen3:4b" -Encoding ascii -NoNewline
+    # la riserva locale convive con Voxtral negli 8 GB: scarico qwen3:4b se Ollama c'e'
     try { ollama pull qwen3:4b 2>&1 | Out-Null } catch { Warn "Ollama non trovato: scarica qwen3:4b a parte." }
 }
 catch {
@@ -110,7 +115,7 @@ $gb = [math]::Round((Get-ChildItem $base -Recurse -File | Measure-Object Length 
 Write-Host ""
 Write-Host "  =================================================" -ForegroundColor Green
 Write-Host "   FATTO! Voce con Voxtral attiva ($gb GB)." -ForegroundColor Green
-Write-Host "   STT = voxtral, cervello = qwen3:4b. Riavvia Decodius e usa il microfono." -ForegroundColor Green
+Write-Host "   STT = voxtral, cervello = glm-4.7:cloud (riserva qwen3:4b). Riavvia Decodius e usa il microfono." -ForegroundColor Green
 Write-Host "   (Per tornare a Whisper: scrivi 'whisper' in decodius_stt.txt)" -ForegroundColor Green
 Write-Host "  =================================================" -ForegroundColor Green
 Write-Host ""
