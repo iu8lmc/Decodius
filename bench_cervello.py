@@ -22,6 +22,7 @@ except Exception:
     pass
 
 HOST = "http://127.0.0.1:11434"
+NO_THINK = False   # se True invia think:false (qwen3 ecc.): risposta diretta, niente "thinking"
 
 # Persona di Decodius (estratto del system prompt reale).
 SYSTEM = (
@@ -87,6 +88,8 @@ def call_chat(model, user, tools=None, timeout=120):
             "messages": [{"role": "system", "content": SYSTEM},
                          {"role": "user", "content": user}],
             "options": {"temperature": 0}}
+    if NO_THINK:
+        body["think"] = False
     if tools:
         body["tools"] = tools
     req = urllib.request.Request(HOST + "/api/chat",
@@ -206,7 +209,9 @@ def main():
     ap.add_argument("--runs", type=int, default=1, help="ripetizioni per caso (default 1)")
     ap.add_argument("--no-warmup", action="store_true")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--no-think", action="store_true", help="disabilita il thinking (qwen3 ecc.)")
     args = ap.parse_args()
+    globals()["NO_THINK"] = args.no_think
     models = args.models or ["gpt-oss:120b-cloud", "glm-4.7:cloud"]
 
     results = []

@@ -168,11 +168,33 @@ Assistant::Assistant(QObject* parent) : QObject(parent) {
     // l'app INSTALLATA ha lo STT ovunque, offline. Fallback al venv di sviluppo
     // `whisper/venv` (non portabile, legato al Python di sistema).
     const QString sttAppDir = QCoreApplication::applicationDirPath();
-    QString sttPython = sttAppDir + QStringLiteral("/pywhisper/pythonw.exe");
-    QString sttScript = sttAppDir + QStringLiteral("/pywhisper/whisper_server.py");
-    if (!QFileInfo::exists(sttPython) || !QFileInfo::exists(sttScript)) {
-        sttPython = sttAppDir + QStringLiteral("/whisper/venv/Scripts/python.exe");
-        sttScript = sttAppDir + QStringLiteral("/whisper/whisper_server.py");
+    // Motore STT selezionabile via decodius_stt.txt (una riga): "voxtral" (Voxtral-Mini-3B
+    // su llama.cpp, piu' accurato, offline) oppure "whisper" (default leggero, faster-whisper).
+    // Il protocollo verso Decodius e' identico (/ready, /listen -> {"text"}), cambia solo il
+    // server lanciato: WhisperStt resta invariato.
+    QString sttEngine = QStringLiteral("whisper");
+    {
+        QFile ef(sttAppDir + QStringLiteral("/decodius_stt.txt"));
+        if (ef.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            const QString e = QString::fromUtf8(ef.readAll()).trimmed().toLower();
+            if (!e.isEmpty()) sttEngine = e;
+            ef.close();
+        }
+    }
+    QString sttPython, sttScript;
+    if (sttEngine == QStringLiteral("voxtral")) {       // Voxtral: bundle in <app>\voxtral
+        sttPython = sttAppDir + QStringLiteral("/voxtral/py/pythonw.exe");
+        sttScript = sttAppDir + QStringLiteral("/voxtral/voxtral_server.py");
+    }
+    if (sttScript.isEmpty() || !QFileInfo::exists(sttPython) || !QFileInfo::exists(sttScript)) {
+        // Whisper (default): preferisci il bundle PORTATILE pywhisper (Python embeddable +
+        // faster-whisper + modello incluso), poi il venv di sviluppo whisper/venv.
+        sttPython = sttAppDir + QStringLiteral("/pywhisper/pythonw.exe");
+        sttScript = sttAppDir + QStringLiteral("/pywhisper/whisper_server.py");
+        if (!QFileInfo::exists(sttPython) || !QFileInfo::exists(sttScript)) {
+            sttPython = sttAppDir + QStringLiteral("/whisper/venv/Scripts/python.exe");
+            sttScript = sttAppDir + QStringLiteral("/whisper/whisper_server.py");
+        }
     }
     m_whisper = new WhisperStt(sttPython, sttScript, QStringLiteral("small"), 5068, this);
     if (m_whisper->isAvailable()) {

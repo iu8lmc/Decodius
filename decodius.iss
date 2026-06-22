@@ -4,7 +4,7 @@
 ; ============================================================================
 #define MyAppName "Decodius"
 ; Tieni allineato a DECODIUS_VERSION in CMakeLists.txt (versione mostrata nella UI).
-#define MyAppVersion "1.19"
+#define MyAppVersion "1.20"
 #define MyAppPublisher "IU8LMC"
 #define MyAppExe "decodius.exe"
 #define Build "C:\Users\IU8LMC\decodius\build"
@@ -73,6 +73,10 @@ Source: "{#Build}\pyedge\*"; DestDir: "{app}\pyedge"; Flags: ignoreversion recur
 ; Attivabile dal task post-install opzionale o dall'icona "Attiva voce (STT)".
 Source: "{#Build}\setup_stt.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Build}\whisper_server.py"; DestDir: "{app}"; Flags: ignoreversion
+; --- STT alternativo VOXTRAL (Mistral, GPU): OPZIONALE, ~13 GB scaricati a richiesta
+; da setup_voxtral.ps1 (PyTorch + modello in {app}\voxtral). Piu' accurato, richiede GPU NVIDIA. ---
+Source: "{#Build}\setup_voxtral.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Build}\voxtral_server.py"; DestDir: "{app}"; Flags: ignoreversion
 ; --- MCP (tool esterni, OPZIONALE): ponte + esempio + config di esempio. Si attiva
 ; copiando decodius_mcp.example.json in decodius_mcp.json e configurando i server. ---
 Source: "{#Build}\mcp_bridge.py"; DestDir: "{app}"; Flags: ignoreversion
@@ -84,6 +88,7 @@ Source: "{#Build}\decodius_mcp.example.json"; DestDir: "{app}"; Flags: ignorever
 Name: "{group}\Decodius"; Filename: "{app}\{#MyAppExe}"; IconFilename: "{app}\decodius.ico"; WorkingDir: "{app}"
 Name: "{group}\Configura cervello (Ollama)"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\setup_cervello.ps1"""; IconFilename: "{app}\decodius.ico"; WorkingDir: "{app}"
 Name: "{group}\Attiva voce (STT)"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\setup_stt.ps1"""; IconFilename: "{app}\decodius.ico"; WorkingDir: "{app}"
+Name: "{group}\Attiva voce Voxtral (GPU)"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\setup_voxtral.ps1"""; IconFilename: "{app}\decodius.ico"; WorkingDir: "{app}"
 Name: "{group}\Leggimi"; Filename: "{app}\LEGGIMI.txt"
 Name: "{group}\Collega Decodium"; Filename: "{app}\LEGGIMI-Decodium.txt"
 Name: "{group}\Disinstalla Decodius"; Filename: "{uninstallexe}"
