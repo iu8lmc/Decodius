@@ -310,35 +310,112 @@ static QString runLogQso(const QJsonObject& args) {
              banda.isEmpty() ? "?" : banda, modo.isEmpty() ? "?" : modo, rst, path);
 }
 
-// ── Memoria persistente: Decodius ricorda fatti tra le sessioni ──
-// File di testo (una riga per fatto) accanto al log, leggibile dall'utente.
-static QString memoriaPath() {
-    return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
-         + QStringLiteral("/decodius_memoria.txt");
+// ── Memoria persistente come VAULT OBSIDIAN: note Markdown in una cartella ──
+// La memoria di Decodius È un vault Obsidian (cartella di .md): le note sono leggibili e
+// modificabili in Obsidian, con [[wikilink]]. La cartella si configura in
+// decodius_obsidian.txt (riga 1 = percorso del vault); default <Documenti>/Decodius.
+static QString obsidianVaultPath() {
+    QString p;
+    QFile cf(QCoreApplication::applicationDirPath() + QStringLiteral("/decodius_obsidian.txt"));
+    if (cf.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        p = QString::fromUtf8(cf.readAll()).split('\n').value(0).trimmed();
+        cf.close();
+    }
+    if (p.isEmpty())
+        p = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + QStringLiteral("/Decodius");
+    QDir().mkpath(p);
+    return p;
 }
-// Lettura grezza della memoria (usata anche da Assistant per il system prompt).
+// Nota principale della memoria (l'indice dei fatti). La crea (con frontmatter) se manca,
+// migrando una volta sola la vecchia memoria piatta decodius_memoria.txt se presente.
+static QString memoriaNotePath() {
+    const QString path = obsidianVaultPath() + QStringLiteral("/Decodius - Memoria.md");
+    if (!QFileInfo::exists(path)) {
+        QString body = QStringLiteral("---\ntags: [decodius, memoria]\n---\n\n# Decodius — Memoria\n\n"
+                                      "Fatti che Decodius ricorda tra le sessioni (modificabili qui in Obsidian).\n\n");
+        QFile old(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+                  + QStringLiteral("/decodius_memoria.txt"));
+        if (old.open(QIODevice::ReadOnly | QIODevice::Text)) {   // migrazione una tantum
+            const QString prev = QString::fromUtf8(old.readAll()).trimmed();
+            old.close();
+            if (!prev.isEmpty()) body += prev + QStringLiteral("\n");
+        }
+        QFile nf(path);
+        if (nf.open(QIODevice::WriteOnly | QIODevice::Text)) { nf.write(body.toUtf8()); nf.close(); }
+    }
+    return path;
+}
+// Lettura della memoria (solo le righe-fatto "- ...") per il system prompt di Assistant.
 QString decodiusLeggiMemoria() {
-    QFile f(memoriaPath());
+    QFile f(memoriaNotePath());
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return QString();
-    return QString::fromUtf8(f.readAll()).trimmed();
+    const QString c = QString::fromUtf8(f.readAll());
+    f.close();
+    QStringList facts;
+    const QStringList lines = c.split('\n');
+    for (const QString& l : lines)
+        if (l.trimmed().startsWith(QStringLiteral("- "))) facts << l.trimmed();
+    return facts.join('\n');
+}
+// Nome file sicuro da un titolo nota (toglie i caratteri vietati su Windows).
+static QString safeNoteName(QString t) {
+    t.replace(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")), QStringLiteral(" "));
+    return t.simplified();
 }
 static QString runMemoria(const QJsonObject& args) {
     const QString azione = args.value("azione").toString().trimmed().toLower();
+    const QString vault = obsidianVaultPath();
+
+    // CERCA: grep su TUTTE le note .md del vault (anche quelle scritte dall'utente in Obsidian).
+    if (azione.startsWith(QStringLiteral("cerc"))) {
+        const QString q = args.value("contenuto").toString().trimmed();
+        if (q.isEmpty()) return QStringLiteral("Errore: indica cosa cercare in 'contenuto'.");
+        QDir d(vault);
+        QString out; int n = 0;
+        const QStringList files = d.entryList(QStringList{QStringLiteral("*.md")}, QDir::Files, QDir::Time);
+        for (const QString& fn : files) {
+            QFile f(d.filePath(fn));
+            if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
+            const QStringList ls = QString::fromUtf8(f.readAll()).split('\n');
+            f.close();
+            for (const QString& line : ls) {
+                if (line.contains(q, Qt::CaseInsensitive) && line.trimmed().size() > 2
+                    && !line.trimmed().startsWith(QStringLiteral("#")) && !line.contains(QStringLiteral(": ["))) {
+                    out += QStringLiteral("• [[%1]] %2\n").arg(fn.chopped(3), line.trimmed());
+                    if (++n >= 12) break;
+                }
+            }
+            if (n >= 12) break;
+        }
+        return out.isEmpty() ? QStringLiteral("Niente trovato per \"%1\" nel vault Obsidian.").arg(q)
+                             : QStringLiteral("Trovato nel vault Obsidian:\n%1").arg(out);
+    }
+
+    // LEGGI: la nota memoria principale.
     if (azione == QLatin1String("leggi") || azione == QLatin1String("elenca")) {
         const QString c = decodiusLeggiMemoria();
         return c.isEmpty() ? QStringLiteral("Memoria vuota: non ricordo ancora nulla.")
                            : (QStringLiteral("Cose che ricordo:\n") + c);
     }
+
+    // SALVA (default): scrive un fatto come riga Markdown nel vault.
     const QString contenuto = args.value("contenuto").toString().trimmed();
     if (contenuto.isEmpty()) return QStringLiteral("Errore: indica il 'contenuto' da ricordare.");
-    QFile f(memoriaPath());
+    const QString titolo = args.value("titolo").toString().trimmed();
+    const QString date = QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyy-MM-dd"));
+    // Con 'titolo' -> nota per argomento <titolo>.md; senza -> nota memoria principale.
+    QString path, label;
+    if (!titolo.isEmpty()) { path = vault + QStringLiteral("/") + safeNoteName(titolo) + QStringLiteral(".md"); label = titolo; }
+    else                   { path = memoriaNotePath(); label = QStringLiteral("Memoria"); }
+    const bool isNew = !QFileInfo::exists(path);
+    QFile f(path);
     if (!f.open(QIODevice::Append | QIODevice::Text))
-        return QStringLiteral("Errore: impossibile salvare la memoria.");
-    const QString line = QStringLiteral("- [%1] %2\n")
-        .arg(QDateTime::currentDateTimeUtc().toString("yyyy-MM-dd"), contenuto);
-    f.write(line.toUtf8());
+        return QStringLiteral("Errore: impossibile scrivere nel vault Obsidian.");
+    if (isNew && !titolo.isEmpty())
+        f.write(QStringLiteral("---\ntags: [decodius]\n---\n\n# %1\n\n").arg(titolo).toUtf8());
+    f.write(QStringLiteral("- [%1] %2\n").arg(date, contenuto).toUtf8());
     f.close();
-    return QStringLiteral("Memorizzato: %1").arg(contenuto);
+    return QStringLiteral("Annotato in Obsidian (%1): %2").arg(label, contenuto);
 }
 
 // ── Lookup nominativi: prefisso -> Paese/DXCC (tabella offline) ──
@@ -581,10 +658,8 @@ OllamaClient::OllamaClient(QObject* parent) : QObject(parent) {
         {"function", QJsonObject{
             {"name", "ham_kb"},
             {"description",
-             "Consulta la knowledge base interna sui radioamatori (bande e frequenze, "
-             "propagazione, modi digitali FT8/FT4, regolamento italiano e licenze, codici Q, "
-             "locator, antenne, contest, DX, satelliti, apparati). Usala per dettagli tecnici "
-             "radiantistici prima di ricorrere al web."},
+             "Knowledge base radioamatoriale interna: bande/frequenze, codici Q, RST, fonetico, "
+             "modi FT/CW/SSB, antenne, contest, DX, satelliti, normativa italiana. Per i dettagli tecnici."},
             {"parameters", QJsonObject{
                 {"type", "object"},
                 {"properties", QJsonObject{
@@ -684,8 +759,7 @@ OllamaClient::OllamaClient(QObject* parent) : QObject(parent) {
         {"function", QJsonObject{
             {"name", "ora_utc"},
             {"description",
-             "Restituisce data e ora UTC (e locale) correnti. Usalo quando serve l'orario, "
-             "specie per i collegamenti radio che si registrano in UTC. Nessun parametro."},
+             "Data e ora UTC (e locale) correnti. Usalo quando serve l'orario (gli orari ham sono UTC). Nessun parametro."},
             {"parameters", QJsonObject{{"type", "object"}, {"properties", QJsonObject{}}}}
         }}
     };
@@ -721,16 +795,16 @@ OllamaClient::OllamaClient(QObject* parent) : QObject(parent) {
         {"function", QJsonObject{
             {"name", "memoria"},
             {"description",
-             "Memoria persistente di Decodius: ricorda informazioni tra una sessione e l'altra "
-             "(stazioni lavorate, preferenze operative di Martino, obiettivi, appunti). "
-             "Usa azione 'salva' (con 'contenuto') per memorizzare un fatto NUOVO e duraturo che "
-             "l'utente ti dice o che emerge dal QSO; usa azione 'leggi' per rileggere cosa ricordi. "
-             "Salva solo fatti utili a lungo termine, non chiacchiere della conversazione."},
+             "Memoria persistente (note Markdown in un vault Obsidian). azione 'salva' (con "
+             "'contenuto', opz. 'titolo' per una nota per argomento) memorizza un fatto duraturo; "
+             "'leggi' rilegge la memoria; 'cerca' (con 'contenuto'=parola chiave) cerca in tutto il "
+             "vault. Solo fatti utili a lungo termine; nel contenuto puoi usare i [[wikilink]]."},
             {"parameters", QJsonObject{
                 {"type", "object"},
                 {"properties", QJsonObject{
-                    {"azione", QJsonObject{{"type", "string"}, {"description", "salva | leggi"}}},
-                    {"contenuto", QJsonObject{{"type", "string"}, {"description", "il fatto da ricordare (per azione salva)"}}}
+                    {"azione", QJsonObject{{"type", "string"}, {"description", "salva | leggi | cerca"}}},
+                    {"contenuto", QJsonObject{{"type", "string"}, {"description", "il fatto da ricordare (salva) o la parola chiave (cerca)"}}},
+                    {"titolo", QJsonObject{{"type", "string"}, {"description", "opzionale: titolo della nota per argomento (azione salva)"}}}
                 }},
                 {"required", QJsonArray{"azione"}}
             }}
@@ -778,10 +852,8 @@ OllamaClient::OllamaClient(QObject* parent) : QObject(parent) {
         {"function", QJsonObject{
             {"name", "callsign"},
             {"description",
-             "Cerca informazioni su un nominativo radioamatoriale (tipo QRZ): paese/DXCC dal "
-             "prefisso per qualsiasi call, e dettagli (nome, QTH, grid) per i call USA e, se "
-             "configurato HamQTH, in tutto il mondo. Usalo quando l'utente chiede di chi è un "
-             "nominativo o da dove trasmette."},
+             "Info su un nominativo (tipo QRZ): paese/DXCC dal prefisso per ogni call, e nome/QTH/grid "
+             "per i call USA e (se configurato HamQTH) mondiali. Per 'di chi e'/da dove trasmette'."},
             {"parameters", QJsonObject{
                 {"type", "object"},
                 {"properties", QJsonObject{
@@ -816,13 +888,10 @@ OllamaClient::OllamaClient(QObject* parent) : QObject(parent) {
         {"function", QJsonObject{
             {"name", "decodium_comando"},
             {"description",
-             "COMANDA il software Decodium dell'utente. Usalo SOLO quando l'utente chiede "
-             "esplicitamente di agire sulla radio. Comandi: 'modo' (valore FT8/FT4/FT2/CW), "
-             "'banda' (valore es. 20m), 'dial' (hz), 'rx' (hz), 'tx' (hz), 'monitoraggio'/'autocq'/"
-             "'autospot'/'quickqso' (attivo true/false), 'rispondi' (call + grid: risponde a un "
-             "chiamante CQ), 'tx_on'/'tx_off' (attiva/disattiva la TRASMISSIONE), 'cw' (TRASMETTE in "
-             "MORSE il testo in 'valore' tramite il keyer della radio; opzionali hz=frequenza e wpm). "
-             "Attenzione: tx_on, rispondi, autocq, cw mandano la radio IN TRASMISSIONE: fallo solo su richiesta chiara."},
+             "COMANDA Decodium, SOLO su richiesta esplicita di agire sulla radio. Campo 'comando': "
+             "modo (FT8/FT4/FT2/CW), banda (es. 20m), dial/rx/tx (hz), monitoraggio/autocq/autospot/"
+             "quickqso (attivo true/false), rispondi (call+grid), tx_on/tx_off, cw (valore=testo Morse; "
+             "opz. hz, wpm). tx_on/rispondi/autocq/cw mettono in TRASMISSIONE: solo su richiesta chiara."},
             {"parameters", QJsonObject{
                 {"type", "object"},
                 {"properties", QJsonObject{
@@ -905,6 +974,21 @@ void OllamaClient::cancel() {
 void OllamaClient::ask(const QString& userText) {
     abortCurrent();         // una sola richiesta alla volta
     m_toolRounds = 0;
+    m_turnTools = toolsForTurn(userText);   // lazy-loading: tool pertinenti a questo turno
+    // Cap della history (PC modesti): tieni system + ultimi turni, ripartendo da un messaggio
+    // utente (così non restano messaggi-tool "orfani" che confonderebbero il modello/il cloud).
+    if (m_history.size() > 12) {
+        QJsonArray keep;
+        if (!m_history.isEmpty()
+            && m_history.first().toObject().value("role").toString() == QLatin1String("system"))
+            keep.append(m_history.first());
+        int start = m_history.size() - 9;
+        while (start < m_history.size()
+               && m_history.at(start).toObject().value("role").toString() != QLatin1String("user"))
+            ++start;
+        for (int i = qMax(1, start); i < m_history.size(); ++i) keep.append(m_history.at(i));
+        m_history = keep;
+    }
     QJsonObject userMsg{{"role", "user"}, {"content", userText}};
     if (!m_pendingImage.isEmpty()) {        // allega l'immagine (vision) una sola volta
         userMsg["images"] = QJsonArray{ m_pendingImage };
@@ -912,6 +996,64 @@ void OllamaClient::ask(const QString& userText) {
     }
     m_history.append(userMsg);
     sendRequest();
+}
+
+// Lazy-loading dei tool: invia SOLO gli strumenti pertinenti al turno (taglia i token).
+// Set CORE sempre presente + strumenti aggiunti per parole chiave del messaggio; i tool
+// esterni (MCP) sono sempre inclusi; col [PILOTA AUTOMATICO] si invia tutto.
+QJsonArray OllamaClient::toolsForTurn(const QString& userText) {
+    const QString t = userText.toLower();
+    if (t.contains(QLatin1String("[pilota automatico]"))) return m_tools;
+
+    QSet<QString> want{QStringLiteral("ham_kb"), QStringLiteral("memoria"),
+                       QStringLiteral("ora_utc"), QStringLiteral("callsign")};
+    auto has = [&t](std::initializer_list<const char*> ks) {
+        for (auto k : ks) if (t.contains(QLatin1String(k))) return true;
+        return false;
+    };
+    if (has({"propagaz","condizion","sfi","solare","aurora","muf","macchie","x-ray","vento solar","ionosf"}))
+        want.insert(QStringLiteral("propagazione"));
+    if (has({"cluster","spot","quali dx","chi e' spott","cosa c'e'","chi c'e'"}))
+        want.insert(QStringLiteral("dxcluster"));
+    if (has({"decodium","decodif","chi chiama","in banda","traccia","decode","in ricezione","sta ricev"}))
+        want.insert(QStringLiteral("decodium"));
+    if (has({"passa","metti","vai in","trasmett","chiama","rispondi","modo","tx","monitor","autocq",
+             "auto cq","quickqso","dial","sposta","cw","morse","banda","frequenz","autospot"}))
+        want.insert(QStringLiteral("decodium_comando"));
+    if (has({"calcola","dipolo","vertical","onda","ohm","watt","dbm","antenna","lunghezza"}))
+        want.insert(QStringLiteral("ham_calc"));
+    if (has({"locator","distanz","azimut","grid","maidenhead","quanto dista","punta"}))
+        want.insert(QStringLiteral("locatore"));
+    if (has({"logga","log","qso","collegat","lavorat","registra","annota"}))
+        want.insert(QStringLiteral("log_qso"));
+    if (has({"file","cartella","leggi il","apri il","scrivi","crea un file","sul disco","percorso","disco"})) {
+        want.insert(QStringLiteral("scan_folder"));
+        want.insert(QStringLiteral("read_file"));
+        want.insert(QStringLiteral("create_file"));
+    }
+    if (has({"sul web","internet","notizie","google","ultime su","cerca online"}))
+        want.insert(QStringLiteral("web_search"));
+    // "dove/cosa chiamo, consigliami" -> trio operativo per un consiglio completo
+    if (has({"dove chiam","cosa chiam","consigli","cosa faccio","dove opero","suggerisc","mi conviene"})) {
+        want.insert(QStringLiteral("propagazione"));
+        want.insert(QStringLiteral("dxcluster"));
+        want.insert(QStringLiteral("decodium"));
+    }
+
+    static const QSet<QString> kNative{
+        QStringLiteral("scan_folder"), QStringLiteral("read_file"), QStringLiteral("web_search"),
+        QStringLiteral("ham_kb"), QStringLiteral("create_file"), QStringLiteral("ham_calc"),
+        QStringLiteral("locatore"), QStringLiteral("ora_utc"), QStringLiteral("log_qso"),
+        QStringLiteral("memoria"), QStringLiteral("propagazione"), QStringLiteral("dxcluster"),
+        QStringLiteral("callsign"), QStringLiteral("decodium"), QStringLiteral("decodium_comando")};
+    QJsonArray out;
+    for (const QJsonValue& v : m_tools) {
+        const QString name = v.toObject().value(QStringLiteral("function")).toObject()
+                                 .value(QStringLiteral("name")).toString();
+        if (want.contains(name) || !kNative.contains(name))   // i tool MCP esterni: sempre
+            out.append(v);
+    }
+    return out;
 }
 
 // Invia l'intera history (con i tool disponibili) in streaming. Usato sia per la
@@ -925,12 +1067,13 @@ void OllamaClient::sendRequest() {
     };
     QNetworkRequest req;
     QJsonObject body;
+    const QJsonArray& tools = m_turnTools.isEmpty() ? m_tools : m_turnTools;  // lazy-loading
     if (m_openai) {
         // Provider OpenAI-compatibile (NVIDIA NIM, ecc.): /chat/completions + Bearer + SSE.
         body = QJsonObject{
             {"model", m_model},
             {"messages", m_history},
-            {"tools", m_tools},
+            {"tools", tools},
             {"stream", true},
             {"temperature", 0.7},
             {"top_p", 0.9},
@@ -944,7 +1087,7 @@ void OllamaClient::sendRequest() {
         body = QJsonObject{
             {"model", m_model},
             {"messages", m_history},
-            {"tools", m_tools},
+            {"tools", tools},
             {"stream", true},
             {"think", false},          // gemma4 è un modello "thinking": disattivo il
                                        // ragionamento nascosto -> risposte ~3-4x più veloci

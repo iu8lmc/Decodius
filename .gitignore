@@ -54,6 +54,7 @@ set_hamqth.ps1
 update_decodius.ps1
 kill_decodius.ps1
 mcp_voice_test.py
+measure_tokens.py
 bench_gemma.out
 decodius_stt.txt
 

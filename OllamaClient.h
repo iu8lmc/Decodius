@@ -41,6 +41,7 @@ private:
     void warmUp();                      // precarica il modello in VRAM all'avvio
     void warmChat();                    // pre-elabora system prompt+tool (cache prefisso)
     void sendRequest();                 // invia m_history (con i tool) in streaming
+    QJsonArray toolsForTurn(const QString& userText);  // lazy-loading: solo i tool pertinenti
     void onReadyRead();                 // parsing incrementale NDJSON
     void onReadyReadOpenAI();           // parsing incrementale SSE (provider OpenAI-compat)
     void onFinished();                  // chiusura stream (successo o errore)
@@ -99,6 +100,7 @@ private:
     int     m_timeoutMs = 120000;   // 2 min senza alcun token -> abort
     QJsonArray m_history;
     QJsonArray m_tools;             // strumenti esposti al modello (es. scan_folder)
+    QJsonArray m_turnTools;         // sottoinsieme di m_tools pertinente al turno (lazy-loading)
     QString    m_pendingImage;      // base64 immagine per il prossimo messaggio (vision)
 
     // HamQTH (lookup mondiale): credenziali da file appDir/decodius_hamqth.txt
