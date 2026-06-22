@@ -48,6 +48,12 @@ class Assistant : public QObject {
     // Scheda nominativo (QRZ-like): finestra overlay con mappa + dati HamQTH.
     Q_PROPERTY(bool cardVisible READ cardVisible NOTIFY cardChanged)
     Q_PROPERTY(QVariantMap callCard READ callCard NOTIFY cardChanged)
+    // Scheda propagazione (meteo spaziale): SFI/A/K, X-ray, vento solare, condizioni di banda.
+    Q_PROPERTY(bool propVisible READ propVisible NOTIFY propChanged)
+    Q_PROPERTY(QVariantMap propCard READ propCard NOTIFY propChanged)
+    // Scheda DX cluster: spot live (dxwatch) come lista.
+    Q_PROPERTY(bool clusterVisible READ clusterVisible NOTIFY clusterChanged)
+    Q_PROPERTY(QVariantMap clusterCard READ clusterCard NOTIFY clusterChanged)
 
 public:
     enum State { Idle, Listening, Thinking, Speaking };
@@ -85,6 +91,14 @@ public:
     QVariantMap callCard() const { return m_callCard; }
     Q_INVOKABLE void showCard(const QString& call);   // recupera HamQTH e mostra la scheda
     Q_INVOKABLE void hideCard();
+    bool propVisible() const { return m_propVisible; }
+    QVariantMap propCard() const { return m_propCard; }
+    Q_INVOKABLE void showPropagation();   // recupera hamqsl (N0NBH) e mostra la scheda propagazione
+    Q_INVOKABLE void hidePropagation();
+    bool clusterVisible() const { return m_clusterVisible; }
+    QVariantMap clusterCard() const { return m_clusterCard; }
+    Q_INVOKABLE void showCluster();       // recupera gli spot DX (dxwatch) e mostra la scheda cluster
+    Q_INVOKABLE void hideCluster();
 
     Q_INVOKABLE void sendText(const QString& text);
     Q_INVOKABLE void setListening(bool on);   // attiva/disattiva l'ascolto continuo
@@ -109,6 +123,8 @@ signals:
     void rosterChanged();
     void brainChanged();
     void cardChanged();
+    void propChanged();
+    void clusterChanged();
     // Inoltrato a QML: uno strumento chiede conferma prima di scrivere.
     void confirmationRequested(const QString& title, const QString& detail);
 
@@ -159,6 +175,16 @@ private:
     QVariantMap m_callCard;
     QString m_hamSession;           // session_id HamQTH riusato finché valido
     qint64  m_hamSessionMs = 0;     // epoch ms dell'ultimo login
+
+    // Scheda propagazione (hamqsl/N0NBH): meteo spaziale + condizioni di banda.
+    void propLookup();
+    bool    m_propVisible = false;
+    QVariantMap m_propCard;
+
+    // Scheda DX cluster (dxwatch): spot live.
+    void clusterLookup();
+    bool    m_clusterVisible = false;
+    QVariantMap m_clusterCard;
 
     // ── Pilota automatico (Fase 3): tick periodico che fa "ragionare e agire" l'LLM
     // sulla banda usando i suoi tool (decodium, dxcluster, memoria, comandi). ──

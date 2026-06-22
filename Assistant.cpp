@@ -718,6 +718,142 @@ void Assistant::hamLookup(const QString& call) {
     });
 }
 
+// ── Scheda PROPAGAZIONE (meteo spaziale): dati live dal feed XML di hamqsl.com (N0NBH) ──
+void Assistant::hidePropagation() { m_propVisible = false; emit propChanged(); }
+
+void Assistant::showPropagation() {
+    m_propCard = QVariantMap{{QStringLiteral("loading"), true}};
+    m_propVisible = true;
+    emit propChanged();
+    propLookup();
+}
+
+void Assistant::propLookup() {
+    QNetworkRequest req(QUrl(QStringLiteral("https://www.hamqsl.com/solarxml.php")));
+    req.setHeader(QNetworkRequest::UserAgentHeader,
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Decodius/1.0");
+    QNetworkReply* r = m_hudNet->get(req);
+    QTimer::singleShot(15000, r, [r]() { if (r->isRunning()) r->abort(); });
+    connect(r, &QNetworkReply::finished, this, [this, r]() {
+        r->deleteLater();
+        m_propCard.insert(QStringLiteral("loading"), false);
+        if (r->error() != QNetworkReply::NoError) {
+            m_propCard.insert(QStringLiteral("error"), QStringLiteral("Dati propagazione non raggiungibili."));
+            emit propChanged();
+            return;
+        }
+        const QString xml = QString::fromUtf8(r->readAll());
+        auto pick = [&xml](const QString& tag) -> QString {
+            QRegularExpression re(QStringLiteral("<%1>(.*?)</%1>").arg(tag),
+                                  QRegularExpression::DotMatchesEverythingOption);
+            const auto m = re.match(xml);
+            return m.hasMatch() ? m.captured(1).trimmed() : QString();
+        };
+        if (pick(QStringLiteral("solarflux")).isEmpty() && pick(QStringLiteral("kindex")).isEmpty()) {
+            m_propCard.insert(QStringLiteral("error"), QStringLiteral("Dati propagazione non disponibili."));
+            emit propChanged();
+            return;
+        }
+        m_propCard.insert(QStringLiteral("sfi"),         pick(QStringLiteral("solarflux")));
+        m_propCard.insert(QStringLiteral("a"),           pick(QStringLiteral("aindex")));
+        m_propCard.insert(QStringLiteral("k"),           pick(QStringLiteral("kindex")));
+        m_propCard.insert(QStringLiteral("sunspots"),    pick(QStringLiteral("sunspots")));
+        m_propCard.insert(QStringLiteral("xray"),        pick(QStringLiteral("xray")));
+        m_propCard.insert(QStringLiteral("aurora"),      pick(QStringLiteral("aurora")));
+        m_propCard.insert(QStringLiteral("solarwind"),   pick(QStringLiteral("solarwind")));
+        m_propCard.insert(QStringLiteral("geomag"),      pick(QStringLiteral("geomagfield")));
+        m_propCard.insert(QStringLiteral("signalnoise"), pick(QStringLiteral("signalnoise")));
+        m_propCard.insert(QStringLiteral("muf"),         pick(QStringLiteral("muf")));
+        m_propCard.insert(QStringLiteral("protonflux"),  pick(QStringLiteral("protonflux")));
+        m_propCard.insert(QStringLiteral("electronflux"),pick(QStringLiteral("electonflux"))); // tag del feed
+        m_propCard.insert(QStringLiteral("updated"),     pick(QStringLiteral("updated")));
+        // Condizioni di banda HF (giorno/notte): lista di {band, time, cond}.
+        QVariantList bands;
+        QRegularExpression reBand(
+            QStringLiteral("<band name=\"([^\"]+)\" time=\"([^\"]+)\">([^<]+)</band>"));
+        auto it = reBand.globalMatch(xml);
+        while (it.hasNext()) {
+            const auto m = it.next();
+            bands.append(QVariantMap{
+                {QStringLiteral("band"), m.captured(1)},
+                {QStringLiteral("time"), m.captured(2)},
+                {QStringLiteral("cond"), m.captured(3).trimmed()}});
+        }
+        m_propCard.insert(QStringLiteral("bands"), bands);
+        m_propCard.remove(QStringLiteral("error"));
+        emit propChanged();
+    });
+}
+
+// ── Scheda DX CLUSTER: spot live da dxwatch.com (JSON) ──
+void Assistant::hideCluster() { m_clusterVisible = false; emit clusterChanged(); }
+
+static QString clusterBand(double khz) {
+    struct B { double lo, hi; const char* n; };
+    static const B bands[] = {
+        {1800,2000,"160m"},{3500,4000,"80m"},{5300,5410,"60m"},{7000,7300,"40m"},
+        {10100,10150,"30m"},{14000,14350,"20m"},{18068,18168,"17m"},{21000,21450,"15m"},
+        {24890,24990,"12m"},{28000,29700,"10m"},{50000,54000,"6m"},{70000,70500,"4m"},
+        {144000,148000,"2m"},{430000,440000,"70cm"}
+    };
+    for (const auto& b : bands) if (khz >= b.lo && khz <= b.hi) return QString::fromLatin1(b.n);
+    return QString();
+}
+
+void Assistant::showCluster() {
+    m_clusterCard = QVariantMap{{QStringLiteral("loading"), true}};
+    m_clusterVisible = true;
+    emit clusterChanged();
+    clusterLookup();
+}
+
+void Assistant::clusterLookup() {
+    QNetworkRequest req(QUrl(QStringLiteral("https://www.dxwatch.com/dxsd1/s.php?s=0&r=50")));
+    req.setHeader(QNetworkRequest::UserAgentHeader,
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Decodius/1.0");
+    QNetworkReply* r = m_hudNet->get(req);
+    QTimer::singleShot(15000, r, [r]() { if (r->isRunning()) r->abort(); });
+    connect(r, &QNetworkReply::finished, this, [this, r]() {
+        r->deleteLater();
+        m_clusterCard.insert(QStringLiteral("loading"), false);
+        if (r->error() != QNetworkReply::NoError) {
+            m_clusterCard.insert(QStringLiteral("error"), QStringLiteral("DX cluster non raggiungibile."));
+            emit clusterChanged();
+            return;
+        }
+        const QJsonObject root = QJsonDocument::fromJson(r->readAll()).object();
+        const QJsonObject spots = root.value(QStringLiteral("s")).toObject();
+        auto deHtml = [](QString s) {
+            s.replace(QStringLiteral("&lt;"), QStringLiteral("<"));
+            s.replace(QStringLiteral("&gt;"), QStringLiteral(">"));
+            s.replace(QStringLiteral("&amp;"), QStringLiteral("&"));
+            return s.trimmed();
+        };
+        // dxwatch: {"s":{ "<id>": [spotter, freqKHz, dxCall, info, time, ...], ... }}
+        QVariantList list;
+        for (auto it = spots.begin(); it != spots.end() && list.size() < 50; ++it) {
+            const QJsonArray a = it.value().toArray();
+            if (a.size() < 5) continue;
+            const double khz = a.at(1).toDouble();
+            list.append(QVariantMap{
+                {QStringLiteral("spotter"), a.at(0).toString()},
+                {QStringLiteral("freq"),    QString::number(khz, 'f', 1)},
+                {QStringLiteral("band"),    clusterBand(khz)},
+                {QStringLiteral("dxcall"),  a.at(2).toString().toUpper()},
+                {QStringLiteral("info"),    deHtml(a.at(3).toString())},
+                {QStringLiteral("time"),    a.at(4).toString()}});
+        }
+        if (list.isEmpty()) {
+            m_clusterCard.insert(QStringLiteral("error"), QStringLiteral("Nessuno spot DX recente."));
+            emit clusterChanged();
+            return;
+        }
+        m_clusterCard.insert(QStringLiteral("spots"), list);
+        m_clusterCard.remove(QStringLiteral("error"));
+        emit clusterChanged();
+    });
+}
+
 // Espande i nominativi (call) in alfabeto fonetico NATO per la SOLA pronuncia, così
 // "IK0XYZ" viene letto "India Kilo Zero X-ray Yankee Zulu". La chat resta col call.
 QString Assistant::phonetic(const QString& text) {
@@ -880,6 +1016,19 @@ void Assistant::sendText(const QString& text) {
     if (m_autoPilot && (low == QStringLiteral("stop") || low == QStringLiteral("ferma")
         || low == QStringLiteral("ferma tutto") || low == QStringLiteral("basta"))) {
         setAutoPilot(false);
+        return;
+    }
+    // Comando: "cluster" / "spot" / "spot dx" -> scheda HUD con gli spot DX live.
+    if (low.contains(QStringLiteral("cluster")) || low.contains(QStringLiteral("spot dx"))
+        || low.contains(QStringLiteral("dx cluster")) || low.contains(QStringLiteral("spot"))) {
+        showCluster();
+        return;
+    }
+    // Comando: "propagazione" / "meteo spaziale" / "condizioni di banda" -> scheda HUD propagazione.
+    if (low.contains(QStringLiteral("propagazione")) || low.contains(QStringLiteral("meteo spaziale"))
+        || low.contains(QStringLiteral("spaceweather")) || low.contains(QStringLiteral("condizioni di banda"))
+        || low.contains(QStringLiteral("condizioni delle bande"))) {
+        showPropagation();
         return;
     }
     // Comando: "scheda di <call>" / "mostrami la scheda <call>" -> finestra QRZ con mappa.

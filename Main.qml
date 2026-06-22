@@ -934,73 +934,610 @@ Window {
         }
     }
 
-    // ───────── SCHEDA NOMINATIVO (QRZ-like) — overlay con mappa + dati HamQTH ─────────
-    Rectangle {
+    // ───────── SCHEDA STAZIONE — HUD a TUTTO SCHERMO, stile Jarvis ─────────
+    // Overlay translucido (si intravede l'app dietro) con pannelli che entrano in
+    // cascata e si ritraggono all'uscita. Dati live da HamQTH (callCard).
+    Item {
         id: cardOverlay
         anchors.fill: parent
-        visible: assistant.cardVisible
-        opacity: assistant.cardVisible ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 180 } }
-        color: Qt.rgba(0, 0, 0, 0.55)
         z: 100
-        MouseArea { anchors.fill: parent; onClicked: assistant.hideCard() }   // clic fuori = chiudi
+        visible: assistant.cardVisible || reveal > 0.01
+        readonly property var c: assistant.callCard
+        readonly property bool ok: c.loading !== true && c.error === undefined
+        readonly property color hud: root.accent
+        property real reveal: 0   // 0 = nascosto, 1 = mostrato (pilota tutte le animazioni)
+        // sotto-progresso 0..1 di reveal nell'intervallo [a,b]: entrate scaglionate
+        function seg(a, b) { return Math.max(0, Math.min(1, (reveal - a) / (b - a))) }
 
+        states: State { name: "on"; when: assistant.cardVisible
+                        PropertyChanges { cardOverlay.reveal: 1 } }
+        transitions: [
+            Transition { to: "on";   NumberAnimation { property: "reveal"; duration: 540; easing.type: Easing.OutCubic } },
+            Transition { from: "on"; NumberAnimation { property: "reveal"; duration: 320; easing.type: Easing.InCubic } }
+        ]
+
+        // sfondo translucido + chiusura cliccando nel vuoto
         Rectangle {
-            id: cardBox
-            anchors.centerIn: parent
-            width: Math.min(parent.width - 60, 540); height: 430
-            radius: 16
-            color: Qt.rgba(0.04, 0.09, 0.13, 0.97)
-            border.color: root.accent; border.width: 1
-            MouseArea { anchors.fill: parent }   // assorbe i clic dentro la card
-            readonly property var c: assistant.callCard
+            anchors.fill: parent
+            color: Qt.rgba(0.01, 0.03, 0.06, 0.86 * cardOverlay.reveal)
+            MouseArea { anchors.fill: parent; onClicked: assistant.hideCard() }
+        }
+        // scanline orizzontale che attraversa lo schermo all'apertura
+        Rectangle {
+            width: parent.width; height: 2; color: cardOverlay.hud
+            opacity: 0.5 * cardOverlay.seg(0.0, 0.5) * (1 - cardOverlay.seg(0.5, 1.0))
+            y: parent.height * cardOverlay.seg(0.0, 0.85)
+        }
 
-            Column {
-                anchors.fill: parent; anchors.margins: 16; spacing: 10
-
-                Row {
-                    width: parent.width
-                    Text { text: cardBox.c.call || "—"; color: root.accent; font.bold: true
-                           font.pixelSize: 26; font.family: "Consolas"; font.letterSpacing: 2 }
-                    Item { width: parent.width - 200; height: 1 }
-                    Rectangle { width: 26; height: 26; radius: 13; color: cl.containsMouse ? "#ff5d72" : "#1a2a36"
-                        Text { anchors.centerIn: parent; text: "✕"; color: "#cfe9f2"; font.pixelSize: 13 }
-                        MouseArea { id: cl; anchors.fill: parent; hoverEnabled: true; onClicked: assistant.hideCard() } }
-                }
-
-                Text { visible: cardBox.c.loading === true; text: "Caricamento da HamQTH…"
-                       color: "#9fc0cf"; font.pixelSize: 13 }
-                Text { visible: cardBox.c.error !== undefined; text: "⚠ " + (cardBox.c.error || "")
-                       color: "#ffb02e"; font.pixelSize: 13; wrapMode: Text.WordWrap; width: parent.width }
-
-                Rectangle {
-                    width: parent.width; height: 180; radius: 8; clip: true; color: "#06121b"
-                    visible: cardBox.c.loading !== true && cardBox.c.error === undefined
-                    Image { id: cardMap; anchors.fill: parent; source: "world.png"; fillMode: Image.Stretch; opacity: 0.9 }
-                    Rectangle {
-                        visible: cardBox.c.lat !== undefined
-                        width: 12; height: 12; radius: 6
-                        x: cardMap.width  * ((cardBox.c.lon || 0) + 180) / 360 - 6
-                        y: cardMap.height * (90 - (cardBox.c.lat || 0)) / 180 - 6
-                        color: "#ff4a6a"; border.color: "#ffffff"; border.width: 1
-                        SequentialAnimation on scale { loops: Animation.Infinite
-                            NumberAnimation { to: 1.5; duration: 700 } NumberAnimation { to: 1.0; duration: 700 } }
-                    }
-                }
-
-                Grid {
-                    width: parent.width; columns: 2; rowSpacing: 5; columnSpacing: 12
-                    visible: cardBox.c.loading !== true && cardBox.c.error === undefined
-                    Text { text: "👤 " + (cardBox.c.name || "—"); color: "#eaf6fb"; font.pixelSize: 13; width: 250; elide: Text.ElideRight }
-                    Text { text: "🌍 " + (cardBox.c.country || "—"); color: "#eaf6fb"; font.pixelSize: 13 }
-                    Text { text: "🏙 " + (cardBox.c.qth || cardBox.c.city || "—"); color: "#cfe6f0"; font.pixelSize: 12; width: 250; elide: Text.ElideRight }
-                    Text { text: "📍 " + (cardBox.c.grid || "—"); color: "#cfe6f0"; font.pixelSize: 12; font.family: "Consolas" }
-                    Text { text: "✉ QSL: " + (cardBox.c.qsl || "—"); color: "#7fb3c8"; font.pixelSize: 11; width: 250; elide: Text.ElideRight }
-                    Text { text: "ITU " + (cardBox.c.itu || "-") + " · CQ " + (cardBox.c.cq || "-"); color: "#7fb3c8"; font.pixelSize: 11 }
-                }
-                Text { text: "dati: HamQTH.com"; color: "#4d6b78"; font.pixelSize: 9
-                       visible: cardBox.c.loading !== true && cardBox.c.error === undefined }
+        // staffe angolari HUD (4 angoli) che "entrano"
+        Repeater {
+            model: [[1,1],[-1,1],[1,-1],[-1,-1]]
+            delegate: Item {
+                required property var modelData
+                readonly property bool lft: modelData[0] > 0
+                readonly property bool tp:  modelData[1] > 0
+                width: 46; height: 46
+                x: lft ? 26 : cardOverlay.width - 26 - width
+                y: tp  ? 26 : cardOverlay.height - 26 - height
+                opacity: cardOverlay.seg(0.0, 0.5)
+                Rectangle { height: 3; color: cardOverlay.hud
+                            width: 46 * cardOverlay.seg(0.05, 0.55)
+                            x: parent.lft ? 0 : parent.width - width
+                            y: parent.tp  ? 0 : parent.height - 3 }
+                Rectangle { width: 3; color: cardOverlay.hud
+                            height: 46 * cardOverlay.seg(0.05, 0.55)
+                            x: parent.lft ? 0 : parent.width - 3
+                            y: parent.tp  ? 0 : parent.height - height }
             }
         }
+
+        // ── INTESTAZIONE: etichetta + CALLSIGN gigante (glow) + sottotitolo ──
+        Column {
+            id: headerCol
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: parent.height * 0.07
+            spacing: 4
+            opacity: cardOverlay.seg(0.0, 0.45)
+            transform: Translate { y: -22 * (1 - cardOverlay.seg(0.0, 0.45)) }
+            Text { anchors.horizontalCenter: parent.horizontalCenter
+                   text: "// SCHEDA  STAZIONE"; color: cardOverlay.hud; opacity: 0.7
+                   font.pixelSize: 13; font.family: "Consolas"; font.letterSpacing: 6 }
+            Text { id: bigCall
+                   anchors.horizontalCenter: parent.horizontalCenter
+                   text: cardOverlay.c.call || "—"; color: cardOverlay.hud
+                   font.pixelSize: 78; font.bold: true; font.family: "Consolas"; font.letterSpacing: 8
+                   layer.enabled: true
+                   layer.effect: MultiEffect { shadowEnabled: true; shadowColor: cardOverlay.hud
+                                               shadowBlur: 1.0; shadowVerticalOffset: 0; shadowHorizontalOffset: 0
+                                               autoPaddingEnabled: true } }
+            Text { anchors.horizontalCenter: parent.horizontalCenter
+                   visible: cardOverlay.ok
+                   text: (cardOverlay.c.name || "") + (cardOverlay.c.country ? "  ·  " + cardOverlay.c.country : "")
+                   color: "#dff1f8"; font.pixelSize: 18; font.letterSpacing: 1 }
+        }
+
+        // ── STATO: scansione / errore ──
+        Column {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 10; opacity: cardOverlay.seg(0.2, 0.6)
+            visible: !cardOverlay.ok
+            Text { anchors.horizontalCenter: parent.horizontalCenter
+                   visible: cardOverlay.c.loading === true
+                   text: "◌ SCANSIONE HAMQTH…"; color: cardOverlay.hud
+                   font.pixelSize: 22; font.family: "Consolas"; font.letterSpacing: 3
+                   SequentialAnimation on opacity { loops: Animation.Infinite; running: cardOverlay.c.loading === true
+                       NumberAnimation { to: 0.35; duration: 600 } NumberAnimation { to: 1.0; duration: 600 } } }
+            Text { anchors.horizontalCenter: parent.horizontalCenter
+                   visible: cardOverlay.c.error !== undefined
+                   text: "⚠  " + (cardOverlay.c.error || ""); color: "#ffb02e"
+                   font.pixelSize: 18; width: 520; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap }
+        }
+
+        // ── MAPPA: pannello translucido grande con dot + ping + radar ──
+        Rectangle {
+            id: mapPanel
+            visible: cardOverlay.ok
+            anchors.left: parent.left; anchors.leftMargin: parent.width * 0.06
+            anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: parent.height * 0.06
+            width: parent.width * 0.52; height: parent.height * 0.48
+            radius: 10; clip: true
+            color: Qt.rgba(0.02, 0.07, 0.11, 0.55)
+            border.color: cardOverlay.hud; border.width: 1
+            opacity: cardOverlay.seg(0.12, 0.6)
+            scale: 0.93 + 0.07 * cardOverlay.seg(0.12, 0.6)
+            transform: Translate { x: -36 * (1 - cardOverlay.seg(0.12, 0.6)) }
+            MouseArea { anchors.fill: parent }   // assorbe i clic (non chiude)
+
+            Image { id: cardMap; anchors.fill: parent; anchors.margins: 1
+                    source: "world.png"; fillMode: Image.Stretch; opacity: 0.55 }
+            // reticolo
+            Row { anchors.fill: parent
+                Repeater { model: 12; delegate: Item { width: cardMap.width/12; height: cardMap.height
+                    Rectangle { width: 1; height: parent.height; color: cardOverlay.hud; opacity: 0.10 } } } }
+            Column { anchors.fill: parent
+                Repeater { model: 6; delegate: Item { width: cardMap.width; height: cardMap.height/6
+                    Rectangle { width: parent.width; height: 1; color: cardOverlay.hud; opacity: 0.10 } } } }
+
+            // radar che ruota attorno alla stazione
+            Item {
+                id: radar
+                visible: cardOverlay.c.lat !== undefined
+                width: 2; height: 2
+                x: cardMap.width  * ((cardOverlay.c.lon || 0) + 180) / 360
+                y: cardMap.height * (90 - (cardOverlay.c.lat || 0)) / 180
+                Rectangle { width: Math.max(cardMap.width, cardMap.height); height: 1.5
+                            transformOrigin: Item.Left; color: cardOverlay.hud; opacity: 0.45 }
+                RotationAnimator on rotation { from: 0; to: 360; duration: 4200
+                                               loops: Animation.Infinite; running: cardOverlay.visible }
+            }
+            // ping anelli + punto stazione
+            Item {
+                visible: cardOverlay.c.lat !== undefined
+                x: cardMap.width  * ((cardOverlay.c.lon || 0) + 180) / 360
+                y: cardMap.height * (90 - (cardOverlay.c.lat || 0)) / 180
+                Repeater { model: 2; delegate: Rectangle {
+                    required property int index
+                    anchors.centerIn: parent; radius: width/2; color: "transparent"
+                    border.color: "#ff5d72"; border.width: 1.5
+                    SequentialAnimation on width { loops: Animation.Infinite; running: cardOverlay.visible
+                        PauseAnimation { duration: index * 700 }
+                        NumberAnimation { from: 6; to: 56; duration: 1400; easing.type: Easing.OutQuad }
+                        PropertyAction { value: 6 } }
+                    height: width
+                    opacity: 1 - (width - 6) / 50 } }
+                Rectangle { anchors.centerIn: parent; width: 12; height: 12; radius: 6
+                            color: "#ff4a6a"; border.color: "#ffffff"; border.width: 1.5 }
+            }
+            // coordinate in sovraimpressione
+            Text { anchors.left: parent.left; anchors.bottom: parent.bottom; anchors.margins: 8
+                   visible: cardOverlay.c.lat !== undefined
+                   text: "LAT " + (cardOverlay.c.lat || 0).toFixed(2) + "  LON " + (cardOverlay.c.lon || 0).toFixed(2)
+                   color: cardOverlay.hud; font.pixelSize: 11; font.family: "Consolas" }
+            Text { anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 8
+                   text: "● LIVE · HamQTH"; color: cardOverlay.hud; opacity: 0.7
+                   font.pixelSize: 10; font.family: "Consolas" }
+        }
+
+        // ── LETTURA DATI: pannello con i campi HamQTH che entrano scaglionati ──
+        Column {
+            id: infoPanel
+            visible: cardOverlay.ok
+            anchors.right: parent.right; anchors.rightMargin: parent.width * 0.06
+            anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: parent.height * 0.06
+            width: parent.width * 0.30; spacing: 14
+            opacity: cardOverlay.seg(0.22, 0.7)
+            transform: Translate { x: 40 * (1 - cardOverlay.seg(0.22, 0.7)) }
+
+            // i campi HamQTH come "righe-dato" che entrano scaglionate (Repeater: i
+            // delegate vedono cardOverlay; il model si rivaluta quando callCard cambia)
+            Repeater {
+                model: [
+                    { k: "OPERATORE", v: cardOverlay.c.name || "", at: 0.30 },
+                    { k: "QTH",       v: cardOverlay.c.qth || cardOverlay.c.city || "", at: 0.38 },
+                    { k: "LOCATORE",  v: cardOverlay.c.grid || "", at: 0.46 },
+                    { k: "QSL VIA",   v: cardOverlay.c.qsl || "", at: 0.54 },
+                    { k: "ZONE",      v: "ITU " + (cardOverlay.c.itu || "-") + "   ·   CQ " + (cardOverlay.c.cq || "-"), at: 0.62 }
+                ]
+                delegate: Column {
+                    required property var modelData
+                    width: infoPanel.width; spacing: 3
+                    opacity: cardOverlay.seg(modelData.at, modelData.at + 0.35)
+                    Text { text: modelData.k; color: cardOverlay.hud; opacity: 0.65
+                           font.pixelSize: 11; font.family: "Consolas"; font.letterSpacing: 3 }
+                    Text { text: modelData.v.length ? modelData.v : "—"; color: "#eaf6fb"
+                           font.pixelSize: 17; width: infoPanel.width; elide: Text.ElideRight }
+                    Rectangle { height: 1; color: cardOverlay.hud; opacity: 0.25
+                                width: infoPanel.width * cardOverlay.seg(modelData.at, modelData.at + 0.4) }
+                }
+            }
+        }
+
+        // pulsante chiudi (X) in alto a destra
+        Rectangle {
+            anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 30
+            width: 34; height: 34; radius: 17
+            color: cl.containsMouse ? "#ff5d72" : Qt.rgba(0.1, 0.16, 0.2, 0.8)
+            border.color: cardOverlay.hud; border.width: 1
+            opacity: cardOverlay.seg(0.1, 0.5)
+            Text { anchors.centerIn: parent; text: "✕"; color: "#eaf6fb"; font.pixelSize: 15 }
+            MouseArea { id: cl; anchors.fill: parent; hoverEnabled: true; onClicked: assistant.hideCard() }
+        }
+        // footer
+        Text { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 22
+               visible: cardOverlay.ok; opacity: 0.5 * cardOverlay.seg(0.5, 1.0)
+               text: "DATI · HamQTH.com     |     ESC / clic per chiudere"
+               color: cardOverlay.hud; font.pixelSize: 11; font.family: "Consolas"; font.letterSpacing: 2 }
+    }
+
+    // ───────── SCHEDA PROPAGAZIONE — HUD meteo spaziale, stile Jarvis ─────────
+    // Dati live da hamqsl.com (N0NBH): SFI/A/K, X-ray, vento solare, aurora e
+    // condizioni di banda HF giorno/notte. Stesse animazioni della scheda stazione.
+    Item {
+        id: propOverlay
+        anchors.fill: parent
+        z: 101
+        visible: assistant.propVisible || reveal > 0.01
+        readonly property var p: assistant.propCard
+        readonly property bool ok: p.loading !== true && p.error === undefined
+        readonly property color hud: root.accent
+        property real reveal: 0
+        function seg(a, b) { return Math.max(0, Math.min(1, (reveal - a) / (b - a))) }
+        // colori per severità (verde ok · ambra attenzione · rosso scarso)
+        function kColor(k)   { var v = parseInt(k);  return isNaN(v) ? hud : (v <= 2 ? "#3dffa0" : v <= 4 ? "#ffb02e" : "#ff5d72") }
+        function sfiColor(s) { var v = parseInt(s);  return isNaN(v) ? hud : (v >= 120 ? "#3dffa0" : v >= 90 ? "#ffb02e" : "#ff8a5d") }
+        function condColor(c){ c = (c || "").toLowerCase()
+                               return c.indexOf("good") >= 0 ? "#3dffa0" : c.indexOf("fair") >= 0 ? "#ffb02e"
+                                    : c.indexOf("poor") >= 0 ? "#ff5d72" : "#6f8a98" }
+
+        states: State { name: "on"; when: assistant.propVisible
+                        PropertyChanges { propOverlay.reveal: 1 } }
+        transitions: [
+            Transition { to: "on";   NumberAnimation { property: "reveal"; duration: 540; easing.type: Easing.OutCubic } },
+            Transition { from: "on"; NumberAnimation { property: "reveal"; duration: 320; easing.type: Easing.InCubic } }
+        ]
+
+        Rectangle { anchors.fill: parent; color: Qt.rgba(0.01, 0.03, 0.06, 0.88 * propOverlay.reveal)
+                    MouseArea { anchors.fill: parent; onClicked: assistant.hidePropagation() } }
+        Rectangle { width: parent.width; height: 2; color: propOverlay.hud
+                    opacity: 0.5 * propOverlay.seg(0.0, 0.5) * (1 - propOverlay.seg(0.5, 1.0))
+                    y: parent.height * propOverlay.seg(0.0, 0.85) }
+
+        // staffe angolari
+        Repeater {
+            model: [[1,1],[-1,1],[1,-1],[-1,-1]]
+            delegate: Item {
+                required property var modelData
+                readonly property bool lft: modelData[0] > 0
+                readonly property bool tp:  modelData[1] > 0
+                width: 46; height: 46
+                x: lft ? 26 : propOverlay.width - 26 - width
+                y: tp  ? 26 : propOverlay.height - 26 - height
+                opacity: propOverlay.seg(0.0, 0.5)
+                Rectangle { height: 3; color: propOverlay.hud; width: 46 * propOverlay.seg(0.05, 0.55)
+                            x: parent.lft ? 0 : parent.width - width; y: parent.tp ? 0 : parent.height - 3 }
+                Rectangle { width: 3; color: propOverlay.hud; height: 46 * propOverlay.seg(0.05, 0.55)
+                            x: parent.lft ? 0 : parent.width - 3; y: parent.tp ? 0 : parent.height - height }
+            }
+        }
+
+        // intestazione
+        Column {
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: parent.height * 0.035; spacing: 4
+            opacity: propOverlay.seg(0.0, 0.45)
+            transform: Translate { y: -22 * (1 - propOverlay.seg(0.0, 0.45)) }
+            Text { anchors.horizontalCenter: parent.horizontalCenter
+                   text: "// METEO  SPAZIALE"; color: propOverlay.hud; opacity: 0.7
+                   font.pixelSize: 13; font.family: "Consolas"; font.letterSpacing: 6 }
+            Text { anchors.horizontalCenter: parent.horizontalCenter
+                   text: "PROPAGAZIONE"; color: propOverlay.hud
+                   font.pixelSize: 64; font.bold: true; font.family: "Consolas"; font.letterSpacing: 6
+                   layer.enabled: true
+                   layer.effect: MultiEffect { shadowEnabled: true; shadowColor: propOverlay.hud
+                                               shadowBlur: 1.0; shadowVerticalOffset: 0; shadowHorizontalOffset: 0
+                                               autoPaddingEnabled: true } }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; visible: propOverlay.ok
+                   text: propOverlay.p.geomag ? "Campo geomagnetico: " + propOverlay.p.geomag
+                                              + (propOverlay.p.muf ? "   ·   MUF " + propOverlay.p.muf : "") : ""
+                   color: "#dff1f8"; font.pixelSize: 16; font.letterSpacing: 1 }
+        }
+
+        // stato (scansione / errore)
+        Column {
+            anchors.centerIn: parent; spacing: 10
+            opacity: propOverlay.seg(0.2, 0.6); visible: !propOverlay.ok
+            Text { anchors.horizontalCenter: parent.horizontalCenter; visible: propOverlay.p.loading === true
+                   text: "◌ LETTURA METEO SPAZIALE…"; color: propOverlay.hud
+                   font.pixelSize: 22; font.family: "Consolas"; font.letterSpacing: 3
+                   SequentialAnimation on opacity { loops: Animation.Infinite; running: propOverlay.p.loading === true
+                       NumberAnimation { to: 0.35; duration: 600 } NumberAnimation { to: 1.0; duration: 600 } } }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; visible: propOverlay.p.error !== undefined
+                   text: "⚠  " + (propOverlay.p.error || ""); color: "#ffb02e"; font.pixelSize: 18 }
+        }
+
+        // ── SOLE con TEXTURE SOLARE REALE: superficie che ruota (scroll) + limb darkening
+        // (bordo scuro) = forma sferica + corona pulsante. Texture: solarsystemscope (CC-BY). ──
+        Item {
+            id: sunBox
+            visible: propOverlay.ok
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: parent.height * 0.15; width: 210; height: 214
+            opacity: propOverlay.seg(0.1, 0.55)
+            scale: 0.85 + 0.15 * propOverlay.seg(0.1, 0.55)
+            // flusso normalizzato 0..1 da SFI (70..200) -> pilota la corona
+            property real flux: {
+                var v = parseInt(propOverlay.p.sfi)
+                return isNaN(v) ? 0.4 : Math.max(0, Math.min(1, (v - 70) / 130))
+            }
+            Canvas {
+                id: sunCanvas
+                anchors.horizontalCenter: parent.horizontalCenter; y: 0
+                width: 200; height: 200
+                property real t: 0
+                property bool ready: false
+                Component.onCompleted: loadImage("sun.jpg")
+                onImageLoaded: { ready = true; requestPaint() }
+                Timer { interval: 40; running: propOverlay.visible && sunBox.visible; repeat: true
+                        onTriggered: { sunCanvas.t += 0.0016; sunCanvas.requestPaint() } }
+                onPaint: {
+                    var ctx = getContext("2d")
+                    var w = width, h = height, cx = w / 2, cy = h / 2, R = 72, t = sunCanvas.t, fx = sunBox.flux
+                    ctx.reset()
+                    // corona radiale, pulsa col flusso solare
+                    var cR = R + 20 + 6 * Math.sin(t * 60)
+                    var cg = ctx.createRadialGradient(cx, cy, R * 0.72, cx, cy, cR)
+                    cg.addColorStop(0, "rgba(255,180,50," + (0.4 + 0.28 * fx) + ")")
+                    cg.addColorStop(1, "rgba(255,110,20,0)")
+                    ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(cx, cy, cR, 0, 2 * Math.PI); ctx.fill()
+                    // SUPERFICIE: texture solare reale scrollata orizzontalmente = rotazione
+                    ctx.save()
+                    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI); ctx.clip()
+                    if (sunCanvas.ready) {
+                        var tw = R * 2.6, th = R * 2.2, off = (t % 1) * tw
+                        ctx.drawImage("sun.jpg", cx - R * 1.3 - off,      cy - th / 2, tw, th)
+                        ctx.drawImage("sun.jpg", cx - R * 1.3 - off + tw, cy - th / 2, tw, th)
+                    } else {
+                        ctx.fillStyle = "#ffb02e"; ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R)
+                    }
+                    // limb darkening: trasparente al centro -> scuro al bordo (sfera)
+                    var ld = ctx.createRadialGradient(cx, cy, R * 0.5, cx, cy, R)
+                    ld.addColorStop(0, "rgba(0,0,0,0)")
+                    ld.addColorStop(0.82, "rgba(70,18,0,0.20)")
+                    ld.addColorStop(1, "rgba(35,8,0,0.88)")
+                    ctx.fillStyle = ld; ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R)
+                    // luce ambient alto-sinistra (dà volume)
+                    var hl = ctx.createRadialGradient(cx - R * 0.32, cy - R * 0.32, 2, cx - R * 0.32, cy - R * 0.32, R)
+                    hl.addColorStop(0, "rgba(255,250,225,0.28)"); hl.addColorStop(1, "rgba(255,250,225,0)")
+                    ctx.fillStyle = hl; ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R)
+                    ctx.restore()
+                    // limbo luminoso
+                    ctx.strokeStyle = "rgba(255,205,90,0.55)"; ctx.lineWidth = 1.5
+                    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI); ctx.stroke()
+                }
+            }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; anchors.top: sunCanvas.bottom; anchors.topMargin: 6
+                   text: "FLUSSO SOLARE · SFI " + (propOverlay.p.sfi || "-")
+                   color: propOverlay.hud; font.pixelSize: 13; font.family: "Consolas"; font.letterSpacing: 2 }
+        }
+
+        // tiles indicatori
+        Grid {
+            visible: propOverlay.ok
+            anchors.horizontalCenter: parent.horizontalCenter; y: parent.height * 0.45
+            columns: 4; rowSpacing: 16; columnSpacing: 16
+            opacity: propOverlay.seg(0.15, 0.6)
+            transform: Translate { y: 26 * (1 - propOverlay.seg(0.15, 0.6)) }
+            Repeater {
+                model: [
+                    { k: "SFI",        v: propOverlay.p.sfi || "-",                      c: propOverlay.sfiColor(propOverlay.p.sfi) },
+                    { k: "MACCHIE",    v: propOverlay.p.sunspots || "-",                 c: propOverlay.hud },
+                    { k: "A-INDEX",    v: propOverlay.p.a || "-",                        c: propOverlay.hud },
+                    { k: "K-INDEX",    v: propOverlay.p.k || "-",                        c: propOverlay.kColor(propOverlay.p.k) },
+                    { k: "RAGGI X",    v: propOverlay.p.xray || "-",                     c: propOverlay.hud },
+                    { k: "VENTO SOL.", v: (propOverlay.p.solarwind || "-") + " km/s",    c: propOverlay.hud },
+                    { k: "AURORA",     v: propOverlay.p.aurora || "-",                   c: propOverlay.hud },
+                    { k: "RUMORE",     v: propOverlay.p.signalnoise || "-",              c: propOverlay.hud }
+                ]
+                delegate: Rectangle {
+                    required property var modelData
+                    width: 168; height: 88; radius: 8
+                    color: Qt.rgba(0.02, 0.07, 0.11, 0.55); border.color: propOverlay.hud; border.width: 1
+                    Column { anchors.centerIn: parent; spacing: 6
+                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.k
+                               color: propOverlay.hud; opacity: 0.7; font.pixelSize: 11; font.family: "Consolas"; font.letterSpacing: 2 }
+                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.v
+                               color: modelData.c; font.pixelSize: 29; font.bold: true; font.family: "Consolas" } }
+                    Rectangle { width: parent.width; height: 2; anchors.bottom: parent.bottom; color: modelData.c; opacity: 0.5 }
+                }
+            }
+        }
+
+        // condizioni di banda HF (giorno/notte)
+        Column {
+            visible: propOverlay.ok
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom; anchors.bottomMargin: parent.height * 0.10
+            spacing: 10
+            opacity: propOverlay.seg(0.4, 0.85)
+            transform: Translate { y: 28 * (1 - propOverlay.seg(0.4, 0.85)) }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "CONDIZIONI  BANDE  HF"
+                   color: propOverlay.hud; opacity: 0.7; font.pixelSize: 12; font.family: "Consolas"; font.letterSpacing: 4 }
+            Grid {
+                anchors.horizontalCenter: parent.horizontalCenter
+                columns: 4; rowSpacing: 10; columnSpacing: 10
+                Repeater {
+                    model: propOverlay.p.bands || []
+                    delegate: Rectangle {
+                        required property var modelData
+                        width: 150; height: 54; radius: 6
+                        color: Qt.rgba(0.02, 0.07, 0.11, 0.5)
+                        border.color: propOverlay.condColor(modelData.cond); border.width: 1
+                        Column { anchors.centerIn: parent; spacing: 2
+                            Text { anchors.horizontalCenter: parent.horizontalCenter
+                                   text: modelData.band + "   " + (modelData.time === "day" ? "☀ giorno" : "☾ notte")
+                                   color: "#cfe6f0"; font.pixelSize: 11; font.family: "Consolas" }
+                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.cond
+                                   color: propOverlay.condColor(modelData.cond); font.pixelSize: 16; font.bold: true } }
+                    }
+                }
+            }
+        }
+
+        // chiudi + footer
+        Rectangle {
+            anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 30
+            width: 34; height: 34; radius: 17
+            color: pcl.containsMouse ? "#ff5d72" : Qt.rgba(0.1, 0.16, 0.2, 0.8)
+            border.color: propOverlay.hud; border.width: 1
+            opacity: propOverlay.seg(0.1, 0.5)
+            Text { anchors.centerIn: parent; text: "✕"; color: "#eaf6fb"; font.pixelSize: 15 }
+            MouseArea { id: pcl; anchors.fill: parent; hoverEnabled: true; onClicked: assistant.hidePropagation() }
+        }
+        Text { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 22
+               visible: propOverlay.ok; opacity: 0.5 * propOverlay.seg(0.5, 1.0)
+               text: "DATI · hamqsl.com (N0NBH)" + (propOverlay.p.updated ? "   ·   agg. " + propOverlay.p.updated : "")
+                     + "     |     clic per chiudere"
+               color: propOverlay.hud; font.pixelSize: 11; font.family: "Consolas"; font.letterSpacing: 2 }
+    }
+
+    // ───────── SCHEDA DX CLUSTER — HUD spot live, stile Jarvis ─────────
+    // Spot DX live da dxwatch.com come lista a cascata, con banda colorata.
+    Item {
+        id: clusterOverlay
+        anchors.fill: parent
+        z: 102
+        visible: assistant.clusterVisible || reveal > 0.01
+        readonly property var c: assistant.clusterCard
+        readonly property bool ok: c.loading !== true && c.error === undefined
+        readonly property color hud: root.accent
+        property real reveal: 0
+        function seg(a, b) { return Math.max(0, Math.min(1, (reveal - a) / (b - a))) }
+        function bandColor(b) {
+            switch (b) {
+            case "160m": case "80m": return "#8a7bff"
+            case "60m": case "40m": return "#36b6e0"
+            case "30m": case "20m": return "#3dffa0"
+            case "17m": case "15m": return "#ffd24a"
+            case "12m": case "10m": return "#ff8a3d"
+            case "6m": case "4m": case "2m": case "70cm": return "#ff5d72"
+            default: return hud
+            }
+        }
+        states: State { name: "on"; when: assistant.clusterVisible
+                        PropertyChanges { clusterOverlay.reveal: 1 } }
+        transitions: [
+            Transition { to: "on";   NumberAnimation { property: "reveal"; duration: 540; easing.type: Easing.OutCubic } },
+            Transition { from: "on"; NumberAnimation { property: "reveal"; duration: 320; easing.type: Easing.InCubic } }
+        ]
+
+        Rectangle { anchors.fill: parent; color: Qt.rgba(0.01, 0.03, 0.06, 0.9 * clusterOverlay.reveal)
+                    MouseArea { anchors.fill: parent; onClicked: assistant.hideCluster() } }
+        Rectangle { width: parent.width; height: 2; color: clusterOverlay.hud
+                    opacity: 0.5 * clusterOverlay.seg(0.0, 0.5) * (1 - clusterOverlay.seg(0.5, 1.0))
+                    y: parent.height * clusterOverlay.seg(0.0, 0.85) }
+
+        Repeater {
+            model: [[1,1],[-1,1],[1,-1],[-1,-1]]
+            delegate: Item {
+                required property var modelData
+                readonly property bool lft: modelData[0] > 0
+                readonly property bool tp:  modelData[1] > 0
+                width: 46; height: 46
+                x: lft ? 26 : clusterOverlay.width - 26 - width
+                y: tp  ? 26 : clusterOverlay.height - 26 - height
+                opacity: clusterOverlay.seg(0.0, 0.5)
+                Rectangle { height: 3; color: clusterOverlay.hud; width: 46 * clusterOverlay.seg(0.05, 0.55)
+                            x: parent.lft ? 0 : parent.width - width; y: parent.tp ? 0 : parent.height - 3 }
+                Rectangle { width: 3; color: clusterOverlay.hud; height: 46 * clusterOverlay.seg(0.05, 0.55)
+                            x: parent.lft ? 0 : parent.width - 3; y: parent.tp ? 0 : parent.height - height }
+            }
+        }
+
+        // intestazione
+        Column {
+            anchors.horizontalCenter: parent.horizontalCenter; y: parent.height * 0.06; spacing: 4
+            opacity: clusterOverlay.seg(0.0, 0.45)
+            transform: Translate { y: -22 * (1 - clusterOverlay.seg(0.0, 0.45)) }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "// DX  CLUSTER  ·  SPOT  LIVE"
+                   color: clusterOverlay.hud; opacity: 0.7; font.pixelSize: 13; font.family: "Consolas"; font.letterSpacing: 6 }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "DX CLUSTER"; color: clusterOverlay.hud
+                   font.pixelSize: 60; font.bold: true; font.family: "Consolas"; font.letterSpacing: 6
+                   layer.enabled: true
+                   layer.effect: MultiEffect { shadowEnabled: true; shadowColor: clusterOverlay.hud
+                                               shadowBlur: 1.0; shadowVerticalOffset: 0; shadowHorizontalOffset: 0
+                                               autoPaddingEnabled: true } }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; visible: clusterOverlay.ok
+                   text: (clusterOverlay.c.spots ? clusterOverlay.c.spots.length : 0) + " spot recenti"
+                   color: "#dff1f8"; font.pixelSize: 15; font.letterSpacing: 1 }
+        }
+
+        // stato (interrogazione / errore)
+        Column {
+            anchors.centerIn: parent; spacing: 10; opacity: clusterOverlay.seg(0.2, 0.6); visible: !clusterOverlay.ok
+            Text { anchors.horizontalCenter: parent.horizontalCenter; visible: clusterOverlay.c.loading === true
+                   text: "◌ INTERROGAZIONE CLUSTER…"; color: clusterOverlay.hud
+                   font.pixelSize: 22; font.family: "Consolas"; font.letterSpacing: 3
+                   SequentialAnimation on opacity { loops: Animation.Infinite; running: clusterOverlay.c.loading === true
+                       NumberAnimation { to: 0.35; duration: 600 } NumberAnimation { to: 1.0; duration: 600 } } }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; visible: clusterOverlay.c.error !== undefined
+                   text: "⚠  " + (clusterOverlay.c.error || ""); color: "#ffb02e"; font.pixelSize: 18 }
+        }
+
+        // lista spot (scrollabile)
+        Item {
+            id: spotList
+            visible: clusterOverlay.ok
+            anchors.horizontalCenter: parent.horizontalCenter; y: parent.height * 0.25
+            width: Math.min(parent.width - 120, 880); height: parent.height * 0.63
+            opacity: clusterOverlay.seg(0.12, 0.5)
+            // intestazione colonne (fissa, allineata alle righe)
+            Column {
+                id: spotHead
+                width: parent.width
+                Row { x: 6; width: parent.width - 16; spacing: 0
+                    Text { width: 70;  text: "BANDA";    color: clusterOverlay.hud; opacity: 0.55; font.pixelSize: 10; font.family: "Consolas"; font.letterSpacing: 1 }
+                    Text { width: 150; text: "DX";       color: clusterOverlay.hud; opacity: 0.55; font.pixelSize: 10; font.family: "Consolas"; font.letterSpacing: 1 }
+                    Text { width: 110; text: "FREQ kHz"; color: clusterOverlay.hud; opacity: 0.55; font.pixelSize: 10; font.family: "Consolas"; font.letterSpacing: 1 }
+                    Text { width: parent.width - 530; text: "INFO"; color: clusterOverlay.hud; opacity: 0.55; font.pixelSize: 10; font.family: "Consolas"; font.letterSpacing: 1 }
+                    Text { width: 200; text: "DE · ORA"; horizontalAlignment: Text.AlignRight; color: clusterOverlay.hud; opacity: 0.55; font.pixelSize: 10; font.family: "Consolas"; font.letterSpacing: 1 }
+                }
+                Rectangle { x: 6; width: parent.width - 16; height: 1; color: clusterOverlay.hud; opacity: 0.25 }
+            }
+            // lista scorrevole con tutti gli spot
+            ListView {
+                id: spotView
+                anchors.top: spotHead.bottom; anchors.topMargin: 6
+                width: parent.width; height: parent.height - spotHead.height - 6
+                clip: true; spacing: 6
+                model: clusterOverlay.c.spots || []
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar {
+                    width: 6; policy: ScrollBar.AsNeeded
+                    contentItem: Rectangle { radius: 3; color: clusterOverlay.hud; opacity: 0.45 }
+                }
+                delegate: Rectangle {
+                    required property var modelData
+                    required property int index
+                    width: spotView.width - 8; height: 38; radius: 5
+                    color: index % 2 === 0 ? Qt.rgba(0.05, 0.11, 0.15, 0.55) : Qt.rgba(0.02, 0.06, 0.09, 0.5)
+                    // entrata scaglionata, limitata a 12 righe (le successive arrivano insieme)
+                    property real st: clusterOverlay.seg(0.16 + Math.min(index, 12) * 0.028, 0.46 + Math.min(index, 12) * 0.028)
+                    opacity: st
+                    transform: Translate { x: 30 * (1 - st) }
+                    Row {
+                        anchors.verticalCenter: parent.verticalCenter; anchors.left: parent.left; anchors.leftMargin: 6
+                        width: parent.width - 16; spacing: 0
+                        Item { width: 70; height: 26
+                            Rectangle { anchors.verticalCenter: parent.verticalCenter; width: 56; height: 22; radius: 4
+                                color: "transparent"; border.color: clusterOverlay.bandColor(modelData.band); border.width: 1.5
+                                Text { anchors.centerIn: parent; text: modelData.band || "?"; color: clusterOverlay.bandColor(modelData.band)
+                                       font.pixelSize: 12; font.bold: true; font.family: "Consolas" } } }
+                        Text { width: 150; anchors.verticalCenter: parent.verticalCenter; text: modelData.dxcall
+                               color: "#ffffff"; font.pixelSize: 18; font.bold: true; font.family: "Consolas"; font.letterSpacing: 1 }
+                        Text { width: 110; anchors.verticalCenter: parent.verticalCenter; text: modelData.freq
+                               color: clusterOverlay.hud; font.pixelSize: 15; font.family: "Consolas" }
+                        Text { width: parent.width - 530; anchors.verticalCenter: parent.verticalCenter
+                               text: modelData.info; color: "#cfe6f0"; font.pixelSize: 13; elide: Text.ElideRight }
+                        Text { width: 200; anchors.verticalCenter: parent.verticalCenter; horizontalAlignment: Text.AlignRight
+                               text: (modelData.spotter ? "de " + modelData.spotter : "") + (modelData.time ? "  " + modelData.time : "")
+                               color: "#7fb3c8"; font.pixelSize: 12; font.family: "Consolas"; elide: Text.ElideLeft }
+                    }
+                }
+            }
+        }
+
+        // chiudi + footer
+        Rectangle {
+            anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 30; width: 34; height: 34; radius: 17
+            color: ccl.containsMouse ? "#ff5d72" : Qt.rgba(0.1, 0.16, 0.2, 0.8); border.color: clusterOverlay.hud; border.width: 1
+            opacity: clusterOverlay.seg(0.1, 0.5)
+            Text { anchors.centerIn: parent; text: "✕"; color: "#eaf6fb"; font.pixelSize: 15 }
+            MouseArea { id: ccl; anchors.fill: parent; hoverEnabled: true; onClicked: assistant.hideCluster() }
+        }
+        Text { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 22
+               visible: clusterOverlay.ok; opacity: 0.5 * clusterOverlay.seg(0.5, 1.0)
+               text: "DATI · dxwatch.com     |     clic per chiudere"
+               color: clusterOverlay.hud; font.pixelSize: 11; font.family: "Consolas"; font.letterSpacing: 2 }
     }
 }
