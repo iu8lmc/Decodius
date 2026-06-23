@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 # Versione UNICA del progetto: usata da project(), dal bundle macOS e mostrata nella
 # UI (Qt.application.version, via main.cpp). Bumpa QUI a ogni release e allinea decodius.iss.
-set(DECODIUS_VERSION "1.26")
+set(DECODIUS_VERSION "1.27")
 
 project(Decodius VERSION ${DECODIUS_VERSION} LANGUAGES CXX)
 

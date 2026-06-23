@@ -1090,7 +1090,10 @@ QRegularExpression Assistant::compileIntentPattern(const QString& pat, QVector<I
             if (eq >= 0) {
                 s.name = inside.left(eq).trimmed();
                 const QString spec = inside.mid(eq + 1).trimmed();
-                if (spec == QLatin1String("call")) { s.kind = 2; rx += QStringLiteral("([A-Za-z0-9/]+)"); }
+                // call = nominativo VERO: 0-3 lettere + UNA cifra + lettera + resto.
+                // La cifra obbligatoria fa sì che parole comuni ("Marconi", "mia", "sei")
+                // NON vengano scambiate per comandi: restano alla chat. Copre IK0XYZ, W1AW, 2E0ABC.
+                if (spec == QLatin1String("call")) { s.kind = 2; rx += QStringLiteral("([A-Za-z]{0,3}[0-9][A-Za-z][A-Za-z0-9/]*)"); }
                 else if (spec == QLatin1String("num")) { s.kind = 3; rx += QStringLiteral("([0-9.,]+)"); }
                 else { s.kind = 1; s.opts = spec.split('|'); rx += '(' + spec + ')'; }
             } else { s.name = inside; s.kind = 0; rx += QStringLiteral("(.+)"); }
