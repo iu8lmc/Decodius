@@ -1,6 +1,7 @@
 // OllamaClient.cpp
 #include "OllamaClient.h"
 #include "DecodiumConfig.h"
+#include "Synapse.h"   // recupero associativo della memoria ("sinapsi") + codec ham
 #include <QNetworkRequest>
 #include <QNetworkReply>
 #include <QJsonDocument>
@@ -989,7 +990,16 @@ void OllamaClient::ask(const QString& userText) {
         for (int i = qMax(1, start); i < m_history.size(); ++i) keep.append(m_history.at(i));
         m_history = keep;
     }
-    QJsonObject userMsg{{"role", "user"}, {"content", userText}};
+    // SINAPSI: recupero ASSOCIATIVO della memoria per QUESTA domanda (grafo +
+    // attivazione che si propaga), già compattato col codec ham. Sostituisce il
+    // vecchio scarico piatto di tutta la memoria nel system prompt: solo i fatti
+    // collegati alla domanda, e nulla se non c'è nulla di pertinente (meno token).
+    QString content = userText;
+    const QString mem = synapseRecall(obsidianVaultPath(), userText);
+    if (!mem.isEmpty())
+        content = QStringLiteral("[MEMORIA PERTINENTE]\n%1\n[FINE MEMORIA]\n\n%2").arg(mem, userText);
+
+    QJsonObject userMsg{{"role", "user"}, {"content", content}};
     if (!m_pendingImage.isEmpty()) {        // allega l'immagine (vision) una sola volta
         userMsg["images"] = QJsonArray{ m_pendingImage };
         m_pendingImage.clear();

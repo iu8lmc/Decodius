@@ -1374,11 +1374,9 @@ void Assistant::applySystemPrompt() {
         p.replace(QStringLiteral("IU8LMC"), m_callSign);
         p.replace(QStringLiteral("Martino"), m_callSign);
     }
-    const QString mem = decodiusLeggiMemoria();
-    if (!mem.isEmpty()) {
-        p += QStringLiteral("\n\nMEMORIA PERSISTENTE (cose che ricordi dalle sessioni precedenti; "
-                            "usala quando pertinente, ma non elencarla a meno che non te lo chieda):\n") + mem;
-    }
+    // NB: la memoria NON viene più scaricata tutta qui (sprecava token ad ogni turno).
+    // Ora è recuperata in modo ASSOCIATIVO per ogni domanda dal grafo a "sinapsi"
+    // (OllamaClient::ask -> synapseRecall): solo i fatti collegati, già compattati.
     m_ollama.setSystemPrompt(p);
 }
 

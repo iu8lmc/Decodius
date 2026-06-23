@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 # Versione UNICA del progetto: usata da project(), dal bundle macOS e mostrata nella
 # UI (Qt.application.version, via main.cpp). Bumpa QUI a ogni release e allinea decodius.iss.
-set(DECODIUS_VERSION "1.27")
+set(DECODIUS_VERSION "1.28")
 
 project(Decodius VERSION ${DECODIUS_VERSION} LANGUAGES CXX)
 
@@ -26,6 +26,7 @@ qt_add_executable(decodius
     XttsTts.cpp
     WhisperStt.cpp
     DecodiumConfig.cpp
+    Synapse.cpp
 )
 
 qt_add_qml_module(decodius
@@ -39,6 +40,7 @@ qt_add_qml_module(decodius
     SOURCES
         AudioAnalyzer.h
         Assistant.h
+        Synapse.h
 )
 
 target_link_libraries(decodius PRIVATE
@@ -59,6 +61,10 @@ if (TARGET Qt6::TextToSpeech)
 else()
     message(STATUS "Decodius: TextToSpeech non trovato -> build senza voce.")
 endif()
+
+# Test di sviluppo del modulo Synapse (console, NON impacchettato dall'installer).
+qt_add_executable(synapse_test synapse_test.cpp Synapse.cpp)
+target_link_libraries(synapse_test PRIVATE Qt6::Core)
 
 # Su Windows: app GUI senza finestra console + icona dell'exe (risorsa .rc).
 if (WIN32)
