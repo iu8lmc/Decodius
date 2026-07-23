@@ -146,9 +146,76 @@ Assistant::Assistant(QObject* parent) : QObject(parent) {
     });
 
     connect(&m_ollama, &OllamaClient::errorOccurred, this, [this](const QString& msg) {
+        // Registro l'errore GREZZO su file (per diagnosi remota su PC altrui): a video il
+        // messaggio è volutamente tradotto/azionabile, ma qui resta la causa esatta di Ollama.
+        // Posizione SCRIVIBILE anche con l'app in Program Files (come call.txt):
+        // %APPDATA%/Decodius/Decodius/decodius_brain.log
+        {
+            QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+            if (dir.isEmpty()) dir = QCoreApplication::applicationDirPath();
+            QDir().mkpath(dir);
+            QFile lg(dir + QStringLiteral("/decodius_brain.log"));
+            if (lg.open(QIODevice::Append | QIODevice::Text))
+                lg.write((QDateTime::currentDateTime().toString(Qt::ISODate) + QStringLiteral("  ") + msg + '\n').toUtf8());
+        }
         if (m_inAutoTick) { m_inAutoTick = false; m_streaming = false; setState(Idle); return; }
-        m_lastResponse = "Errore di connessione a Ollama: " + msg;
+        // Traduce l'errore grezzo (spesso inglese: "Internal Server Error", "model ...
+        // not found", "Connection refused") in un messaggio chiaro e azionabile in
+        // italiano, e fa comparire il wizard del cervello quando il guasto è proprio lì.
+        // Senza questo, l'utente vede solo un "server error" opaco e non sa cosa fare.
+        const QString low = msg.toLower();
+        QString friendly;   // messaggio lungo mostrato in chat
+        QString reason;     // motivo breve mostrato nell'intestazione del wizard
+        bool brain = false;
+        if (low.contains("unauthorized") || low.contains("forbidden")
+                || low.contains("401") || low.contains("403")
+                || low.contains("api key") || low.contains("invalid token")
+                || low.contains("payment") || low.contains("requires")
+                || low.contains("subscription") || low.contains("upgrade for access")) {
+            friendly = QStringLiteral("Il cervello in cloud ha rifiutato l'accesso: di solito il modello è a "
+                                      "pagamento o l'account non ha i permessi. Passa al modello locale qui sotto "
+                                      "(qwen3:1.7b, offline, gratuito) con «Avvia setup automatico».");
+            reason = QStringLiteral("il cervello in cloud ha rifiutato l'accesso (modello a pagamento o account senza permessi) — passa al locale qui sotto");
+            brain = true;
+        } else if (low.contains("429") || low.contains("rate limit") || low.contains("quota")
+                   || low.contains("credit") || low.contains("insufficient")) {
+            friendly = QStringLiteral("Il cervello in cloud ha esaurito i crediti o è limitato (rate-limit). "
+                                      "Passa al modello locale qwen3:1.7b (offline, nessun account) con «Avvia setup automatico».");
+            reason = QStringLiteral("crediti cloud esauriti o rate-limit — passa al modello locale qui sotto");
+            brain = true;
+        } else if (low.contains("refused") || low.contains("could not connect")
+                   || low.contains("connect to") || low.contains("unreachable")
+                   || low.contains("host not found") || low.contains("forcibly closed")) {
+            friendly = QStringLiteral("Il cervello (Ollama) non risulta in esecuzione. "
+                                      "Avvia il setup automatico qui sotto: installa e avvia Ollama.");
+            reason = QStringLiteral("Ollama non risulta in esecuzione — avvia il setup");
+            brain = true;
+        } else if (low.contains("try pulling") || low.contains("no such model")
+                   || low.contains("not found") || low.contains("404")) {
+            friendly = QStringLiteral("Il modello configurato non esiste sul server Ollama (non scaricato, "
+                                      "oppure il nome non corrisponde). Avvia il setup automatico qui sotto: "
+                                      "installa qwen3:1.7b (~1,4 GB) e imposta Decodius per usarlo.");
+            reason = QStringLiteral("il modello configurato non esiste sul server Ollama — avvia il setup");
+            brain = true;
+        } else if (low.contains("internal server error") || low.contains("500")) {
+            friendly = QStringLiteral("Il cervello (Ollama) ha restituito un errore interno (500): di solito memoria "
+                                      "insufficiente per caricare il modello, oppure download incompleto. "
+                                      "Riavvia il setup automatico qui sotto per ripristinarlo.");
+            reason = QStringLiteral("errore interno di Ollama (500: memoria scarsa o download incompleto) — riprova il setup");
+            brain = true;
+        } else if (low.contains("tempo scaduto")) {
+            friendly = QStringLiteral("Il cervello non ha risposto in tempo (primo caricamento del modello, "
+                                      "lento sui PC modesti). Riprova fra qualche secondo.");
+        } else {
+            friendly = QStringLiteral("Errore del cervello: %1").arg(msg);
+        }
+        m_lastResponse = friendly;
         emit lastResponseChanged();
+        if (brain) {
+            m_needsBrainSetup = true;
+            if (!reason.isEmpty()) m_brainStatus = reason;   // intestazione del wizard col VERO motivo
+            emit brainChanged();
+        }
 #ifdef HAVE_TTS
         m_streaming = false;
         m_ttsQueue.clear();
@@ -540,8 +607,7 @@ void Assistant::fetchRoster() {
 
 // Verifica se un "cervello" è pronto: provider cloud configurato oppure Ollama attivo.
 void Assistant::checkBrain() {
-    const QString appDir = QCoreApplication::applicationDirPath();
-    if (QFileInfo::exists(appDir + QStringLiteral("/decodius_provider.txt"))) {
+    if (QFileInfo::exists(decodiusConfigPath(QStringLiteral("decodius_provider.txt")))) {
         m_needsBrainSetup = false;
         m_brainStatus = QStringLiteral("Provider cloud configurato.");
         emit brainChanged();
@@ -552,14 +618,51 @@ void Assistant::checkBrain() {
 
 // Verifica Ollama con piu' tentativi (~20s): copre l'avvio lento al boot ed evita il
 // wizard spurio. Al 2o tentativo prova ad AVVIARE Ollama se installato ma non risponde.
+// Vero se il modello primario è cloud o (locale e già scaricato). Vedi header.
+bool Assistant::brainModelPresent(const QByteArray& tagsBody, QString* outExpected) {
+    QString primary = QStringLiteral("qwen3:1.7b");   // default dell'installer
+    QFile mf(decodiusConfigPath(QStringLiteral("decodius_model.txt")));
+    if (mf.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QString cont = QString::fromUtf8(mf.readAll());
+        if (cont.startsWith(QChar(0xFEFF))) cont.remove(0, 1);   // toglie il BOM UTF-8 (PowerShell)
+        const QStringList lines = cont.split('\n', Qt::SkipEmptyParts);
+        for (const QString& raw : lines) {
+            const QString l = raw.trimmed();
+            if (l.isEmpty() || l.startsWith('#')) continue;
+            primary = l; break;                       // riga 1 = modello primario
+        }
+        mf.close();
+    }
+    if (outExpected) *outExpected = primary;
+    if (primary.contains(QStringLiteral(":cloud"))) return true;   // cloud: nulla da scaricare in locale
+    const QJsonArray models = QJsonDocument::fromJson(tagsBody).object().value("models").toArray();
+    for (const QJsonValue& mv : models) {
+        const QString name = mv.toObject().value("name").toString();
+        if (name == primary) return true;
+        if (!primary.contains(':') && name.startsWith(primary + ':')) return true;  // famiglia senza tag
+    }
+    return false;
+}
+
 void Assistant::pollBrain(int attempt) {
     QNetworkReply* r = m_hudNet->get(QNetworkRequest(QUrl(QStringLiteral("http://localhost:11434/api/tags"))));
     QTimer::singleShot(2500, r, [r]() { if (r->isRunning()) r->abort(); });
     connect(r, &QNetworkReply::finished, this, [this, r, attempt]() {
+        const QByteArray tagsBody = r->readAll();
+        const QNetworkReply::NetworkError err = r->error();
         r->deleteLater();
-        if (r->error() == QNetworkReply::NoError) {
-            m_needsBrainSetup = false;
-            m_brainStatus = QStringLiteral("Ollama attivo.");
+        if (err == QNetworkReply::NoError) {
+            // Ollama risponde. Ma il modello configurato è davvero scaricato? Prima si
+            // controllava solo che il server fosse su: il caso "Ollama attivo, modello
+            // mancante" passava e la prima chat falliva con 500 ("server error").
+            QString expected;
+            if (brainModelPresent(tagsBody, &expected)) {
+                m_needsBrainSetup = false;
+                m_brainStatus = QStringLiteral("Ollama attivo.");
+            } else {
+                m_needsBrainSetup = true;
+                m_brainStatus = QStringLiteral("Ollama attivo, ma manca il modello «%1»: avvia il setup.").arg(expected);
+            }
             emit brainChanged();
             return;
         }
@@ -602,9 +705,10 @@ void Assistant::runBrainSetup() {
 }
 
 // Salva un provider cloud OpenAI-compatibile (richiede riavvio per applicarlo).
+// Scrive nella copia UTENTE (scrivibile anche con l'app in Program Files).
 void Assistant::saveProvider(const QString& baseUrl, const QString& apiKey, const QString& model) {
     if (baseUrl.trimmed().isEmpty() || apiKey.trimmed().isEmpty()) return;
-    QFile f(QCoreApplication::applicationDirPath() + QStringLiteral("/decodius_provider.txt"));
+    QFile f(decodiusConfigPath(QStringLiteral("decodius_provider.txt"), true));
     if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
         const QString m = model.trimmed().isEmpty() ? QStringLiteral("meta/llama-3.1-8b-instruct")
                                                      : model.trimmed();

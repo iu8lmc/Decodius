@@ -17,6 +17,23 @@ int main(int argc, char** argv) {
     QTextStream out(stdout);
     out.setEncoding(QStringConverter::Utf8);
 
+    // Modo "vault reale": se DECODIUS_VAULT è impostato, gira la STESSA synapseRecall
+    // dell'app sul vault vero (sola lettura, niente demo). Gli argomenti = le domande.
+    const QString envVault = qEnvironmentVariable("DECODIUS_VAULT");
+    if (!envVault.isEmpty()) {
+        out << "=== VAULT REALE: " << envVault << " ===\n";
+        QStringList qs;
+        for (int i = 1; i < argc; ++i) qs << QString::fromLocal8Bit(argv[i]);
+        if (qs.isEmpty()) qs << QStringLiteral("chi e 9A1ABC");
+        for (const QString& q : qs) {
+            out << "\n--- query: \"" << q << "\" ---\n";
+            const QString r = synapseRecall(envVault, q, 6, 600);
+            out << (r.isEmpty() ? QStringLiteral("(nessun fatto pertinente)\n") : r + '\n');
+            out << "  [" << approxTokens(r) << " token]\n";
+        }
+        return 0;
+    }
+
     // Vault di esempio con fatti INTERCONNESSI (condividono call/banda/modo).
     const QString v = QDir::tempPath() + QStringLiteral("/synapse_demo_vault");
     QDir().mkpath(v);

@@ -5,6 +5,7 @@
 #include <QStringList>
 #ifdef Q_OS_WIN
 #include <QSettings>
+#include <QVariant>
 #endif
 
 DecodiumConfig loadDecodiumConfig()
@@ -35,19 +36,41 @@ DecodiumConfig loadDecodiumConfig()
     }
 
 #ifdef Q_OS_WIN
-    // 2) Windows: completa i campi mancanti dal registro di Decodium.
-    QSettings s(QStringLiteral("Decodium"), QStringLiteral("Decodium3"));
+    // 2) Windows: completa i campi mancanti dalle impostazioni di Decodium.
+    // ATTENZIONE: Decodium salva in un FILE INI (QSettings::IniFormat/UserScope ->
+    // %APPDATA%\Decodium\Decodium3.ini), NON nel registro. Leggere il formato nativo
+    // restituiva valori VUOTI: senza WebServerAccessToken le chiamate a /api/state e
+    // /api/decodes tornavano 401 e Decodium risultava "offline" nell'HUD (mentre i
+    // comandi su :19091 funzionavano lo stesso, perche' su loopback non chiedono auth
+    // -- da qui il sintomo confondente "offline ma i comandi passano").
+    // Il registro resta come ripiego per installazioni vecchie.
+    QSettings ini(QSettings::IniFormat, QSettings::UserScope,
+                  QStringLiteral("Decodium"), QStringLiteral("Decodium3"));
+    QSettings reg(QStringLiteral("Decodium"), QStringLiteral("Decodium3"));
+    // NB: i profili multi-istanza di Decodium stanno sotto MultiSettings/<nome> e il
+    // nome arriva da --config, quindi non e' deducibile da qui: si legge la radice.
+    // Per un profilo diverso si usa decodius_decodium.txt (ha la precedenza).
+    auto value = [&ini, &reg](const QString& key, const QVariant& def = QVariant()) {
+        const QVariant v = ini.value(key);
+        if (!v.isNull() && !v.toString().trimmed().isEmpty()) return v;
+        return reg.value(key, def);
+    };
+
     if (!hasWebToken)
-        c.webToken = s.value(QStringLiteral("WebServerAccessToken")).toString().trimmed();
+        c.webToken = value(QStringLiteral("WebServerAccessToken")).toString().trimmed();
+    if (!hasWebPort) {
+        const int wp = value(QStringLiteral("WebServerPort"), 8080).toInt();
+        c.webPort = (wp > 0) ? wp : 8080;
+    }
     if (!hasCmdPort) {
-        const int p = s.value(QStringLiteral("RemoteHttpPort"), 19091).toInt();
+        const int p = value(QStringLiteral("RemoteHttpPort"), 19091).toInt();
         c.cmdPort = (p > 0) ? p : 19091;
     }
     if (!hasCmdUser)
-        c.cmdUser = s.value(QStringLiteral("RemoteUser"), QStringLiteral("admin")).toString();
+        c.cmdUser = value(QStringLiteral("RemoteUser"), QStringLiteral("admin")).toString();
     if (!hasCmdToken)
-        c.cmdToken = s.value(QStringLiteral("RemoteToken")).toString().trimmed();
-    Q_UNUSED(hasHost); Q_UNUSED(hasWebPort);
+        c.cmdToken = value(QStringLiteral("RemoteToken")).toString().trimmed();
+    Q_UNUSED(hasHost);
 #else
     // 3) Linux/altro: i default valgono già; il file è la fonte primaria.
     Q_UNUSED(hasHost); Q_UNUSED(hasWebPort); Q_UNUSED(hasWebToken);

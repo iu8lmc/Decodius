@@ -881,7 +881,7 @@ Window {
                 implicitHeight: o1.implicitHeight + 20
                 ColumnLayout { id: o1; anchors.fill: parent; anchors.margins: 12; spacing: 6
                     Text { text: "1 ·  Ollama + qwen3:1.7b  (locale, consigliato)"; color: root.accent; font.bold: true; font.pixelSize: 13 }
-                    Text { text: "Installa Ollama, ti fa accedere con un clic e prepara il modello. Serve internet e un account Ollama gratuito."
+                    Text { text: "Installa Ollama e scarica il modello locale (~1,4 GB) sul tuo PC. Serve internet solo per il primo download; poi funziona offline. Nessun account richiesto."
                            color: "#9fc0cf"; font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                     Button { text: "⚙  Avvia setup automatico"; onClicked: assistant.runBrainSetup()
                         background: Rectangle { radius: 9; color: root.accent }

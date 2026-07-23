@@ -532,6 +532,17 @@ static QString runTool(const QString& name, const QJsonObject& args) {
     return QStringLiteral("Errore: strumento sconosciuto \"%1\".").arg(name);
 }
 
+// Vedi dichiarazione in OllamaClient.h.
+QString decodiusConfigPath(const QString& fileName, bool forWrite) {
+    const QString userDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    if (!userDir.isEmpty()) {
+        const QString userFile = userDir + '/' + fileName;
+        if (forWrite) { QDir().mkpath(userDir); return userFile; }   // scrittura: sempre nella copia utente
+        if (QFileInfo::exists(userFile)) return userFile;            // lettura: override utente se presente
+    }
+    return QCoreApplication::applicationDirPath() + '/' + fileName;  // default dell'installer (sola lettura)
+}
+
 OllamaClient::OllamaClient(QObject* parent) : QObject(parent) {
     // Timeout di inattività: scatta solo se non arriva alcun token entro
     // m_timeoutMs; viene riarmato a ogni chunk ricevuto (vedi onReadyRead).
@@ -540,12 +551,14 @@ OllamaClient::OllamaClient(QObject* parent) : QObject(parent) {
 
     // Modello configurabile da file (decodius_model.txt) senza ricompilare: utile
     // per cambiare cervello (es. qwen3-coder:30b, qwen3:30b, gemma4 per la vision).
-    QFile mf(QCoreApplication::applicationDirPath() + QStringLiteral("/decodius_model.txt"));
+    QFile mf(decodiusConfigPath(QStringLiteral("decodius_model.txt")));
     if (mf.open(QIODevice::ReadOnly | QIODevice::Text)) {
         // 1a riga = modello primario (può essere ":cloud"); 2a riga (opzionale) = modello
         // LOCALE di riserva, usato in automatico se il cloud fallisce (crediti/rate/rete).
         QStringList models;
-        const QStringList lines = QString::fromUtf8(mf.readAll()).split('\n');
+        QString cont = QString::fromUtf8(mf.readAll());
+        if (cont.startsWith(QChar(0xFEFF))) cont.remove(0, 1);   // toglie il BOM UTF-8 (PowerShell Set-Content -Encoding UTF8 lo aggiunge: senza questo il nome modello diventa "﻿qwen3..." -> 404)
+        const QStringList lines = cont.split('\n');
         for (const QString& raw : lines) {
             const QString l = raw.trimmed();
             if (!l.isEmpty() && !l.startsWith('#')) models << l;
@@ -562,10 +575,12 @@ OllamaClient::OllamaClient(QObject* parent) : QObject(parent) {
     //   api_key=nvapi-...
     //   model=nvidia/llama-3.3-nemotron-super-49b-v1
     // Se base_url e api_key sono presenti, Decodius usa quel provider invece di Ollama.
-    QFile pf(QCoreApplication::applicationDirPath() + QStringLiteral("/decodius_provider.txt"));
+    QFile pf(decodiusConfigPath(QStringLiteral("decodius_provider.txt")));
     if (pf.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QString base, key, mdl;
-        const QStringList lines = QString::fromUtf8(pf.readAll()).split('\n');
+        QString pcont = QString::fromUtf8(pf.readAll());
+        if (pcont.startsWith(QChar(0xFEFF))) pcont.remove(0, 1);   // toglie il BOM UTF-8
+        const QStringList lines = pcont.split('\n');
         for (const QString& raw : lines) {
             const QString l = raw.trimmed();
             if (l.isEmpty() || l.startsWith('#')) continue;

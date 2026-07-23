@@ -12,6 +12,12 @@
 class QNetworkReply;
 class QProcess;
 
+// Percorso di un file di config Decodius (es. "decodius_model.txt"). Preferisce la copia
+// UTENTE scrivibile (%APPDATA%/Decodius/Decodius/…), così "Configura cervello" e i salvataggi
+// funzionano anche con l'app in Program Files; in lettura ricade sul default dell'installer
+// nella cartella dell'app se la copia utente non esiste. forWrite=true crea la cartella utente.
+QString decodiusConfigPath(const QString& fileName, bool forWrite = false);
+
 class OllamaClient : public QObject {
     Q_OBJECT
 public:
